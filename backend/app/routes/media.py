@@ -1,0 +1,117 @@
+"""Media upload and management routes."""
+
+from uuid import UUID
+from typing import Optional
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.media import Media
+from app.schemas.media import MediaResponse, MediaUpdate, ExifResponse
+from app.services.media_service import process_upload
+from app.services.exif_service import extract_exif
+from app.services.storage import storage
+from app.config import settings
+
+router = APIRouter(prefix="/api/media", tags=["media"])
+
+
+@router.post("/upload", response_model=MediaResponse, status_code=201)
+async def upload_media(
+    file: UploadFile = File(...),
+    trip_id: UUID = Form(...),
+    stop_id: Optional[UUID] = Form(None),
+    caption: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    taken_at: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload a media file (image/video).
+
+    - Extracts EXIF metadata (GPS, timestamp) from images
+    - Generates thumbnail for images
+    - Stores file locally and creates DB record
+    - User-provided lat/lng overrides EXIF data
+    """
+    # Validate file size
+    file_bytes = await file.read()
+    if len(file_bytes) > settings.max_upload_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Max size: {settings.max_upload_size // (1024*1024)}MB",
+        )
+
+    # Validate content type
+    mime_type = file.content_type or "application/octet-stream"
+    if not (mime_type.startswith("image/") or mime_type.startswith("video/")):
+        raise HTTPException(status_code=400, detail="Only image and video files are accepted")
+
+    media = await process_upload(
+        file_bytes=file_bytes,
+        filename=file.filename or "unnamed",
+        mime_type=mime_type,
+        trip_id=trip_id,
+        stop_id=stop_id,
+        caption=caption,
+        override_lat=latitude,
+        override_lng=longitude,
+        override_date=datetime.fromisoformat(taken_at) if taken_at else None,
+        db=db,
+    )
+
+    return media
+
+
+@router.post("/extract-exif", response_model=ExifResponse)
+async def extract_exif_route(file: UploadFile = File(...)):
+    """
+    Extract EXIF metadata from an image without uploading it.
+    Useful for preview before confirming upload.
+    """
+    file_bytes = await file.read()
+    return extract_exif(file_bytes)
+
+
+@router.get("/{media_id}", response_model=MediaResponse)
+async def get_media(media_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get media details by ID."""
+    media = await db.get(Media, media_id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    return media
+
+
+@router.put("/{media_id}", response_model=MediaResponse)
+async def update_media(
+    media_id: UUID, data: MediaUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Update media metadata (caption, location, stop assignment)."""
+    media = await db.get(Media, media_id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(media, key, value)
+    await db.flush()
+    await db.refresh(media)
+    return media
+
+
+@router.delete("/{media_id}", status_code=204)
+async def delete_media(media_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Delete media file and database record."""
+    media = await db.get(Media, media_id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    # Delete files from storage
+    await storage.delete(media.file_path)
+    if media.thumbnail_path:
+        await storage.delete(media.thumbnail_path)
+
+    await db.delete(media)
+    await db.flush()

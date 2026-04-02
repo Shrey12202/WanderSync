@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: worldmap-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: worldmap
+      POSTGRES_USER: worldmap
+      POSTGRES_PASSWORD: worldmap_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+
+volumes:
+  pgdata:
