@@ -265,18 +265,19 @@ export default function MapView({
 
       // Hover on inner — animate inner only, position tooltip relative to wrapperRef
       inner.addEventListener("mouseenter", () => {
+        const tip = tooltipRef.current;
+        const wrapper = wrapperRef.current;
+
+        // Read position BEFORE scale so coords are unaffected by transform
+        const innerRect = inner.getBoundingClientRect();
+        const wRect = wrapper?.getBoundingClientRect();
+
         inner.style.transform = "scale(1.35)";
         inner.style.boxShadow = "0 0 20px rgba(245,158,11,0.75)";
 
-        const tip = tooltipRef.current;
-        const wrapper = wrapperRef.current;
-        if (!tip || !wrapper) return;
-
+        if (!tip || !wrapper || !wRect) return;
         tip.innerHTML = tooltipHTML;
         tip.style.opacity = "1";
-
-        const innerRect = inner.getBoundingClientRect();
-        const wRect = wrapper.getBoundingClientRect();
         tip.style.left = `${innerRect.left - wRect.left + innerRect.width / 2}px`;
         tip.style.top = `${innerRect.top - wRect.top}px`;
       });

@@ -26,19 +26,49 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
 
   const activeMedia = lightboxIndex !== null ? media[lightboxIndex] : null;
 
-  // Populate edit form when lightbox opens or switches
+  // Populate edit form when lightbox opens or switches photo
   useEffect(() => {
     if (activeMedia) {
       setEditCaption(activeMedia.caption || "");
       setEditLat(activeMedia.latitude != null ? String(activeMedia.latitude) : "");
       setEditLng(activeMedia.longitude != null ? String(activeMedia.longitude) : "");
       setEditDate(activeMedia.taken_at ? new Date(activeMedia.taken_at).toISOString().split("T")[0] : "");
-      setEditSearch("");
+      setEditSearch("");   // will be filled by reverse geocode effect below
       setEditSuggestions([]);
       setSaveError(null);
       setEditing(false);
     }
   }, [lightboxIndex]);
+
+  // When edit mode opens, reverse-geocode existing lat/lng to populate the search field
+  useEffect(() => {
+    if (!editing || !activeMedia?.latitude || !activeMedia?.longitude) return;
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+    if (!token) return;
+
+    const lat = activeMedia.latitude;
+    const lng = activeMedia.longitude;
+    // If editSearch already has content (user typed something), don't overwrite
+    if (editSearch) return;
+
+    const reverseGeocode = async () => {
+      try {
+        const res = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,locality,neighborhood,address&access_token=${token}`
+        );
+        const data = await res.json();
+        if (data.features && data.features.length > 0) {
+          setEditSearch(data.features[0].place_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        } else {
+          setEditSearch(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        }
+      } catch {
+        setEditSearch(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
+    };
+    reverseGeocode();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
 
   // Geocoding in edit mode
   useEffect(() => {

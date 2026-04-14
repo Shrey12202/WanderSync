@@ -65,6 +65,10 @@ export async function getTrip(id: string): Promise<TripDetail> {
   return request<TripDetail>(`/api/trips/${id}`);
 }
 
+export async function getTripMedia(tripId: string): Promise<MediaItem[]> {
+  return request<MediaItem[]>(`/api/trips/${tripId}/media`);
+}
+
 export async function createTrip(data: CreateTripRequest): Promise<TripDetail> {
   return request<TripDetail>("/api/trips", {
     method: "POST",

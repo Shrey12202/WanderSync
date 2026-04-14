@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, use } from "react";
-import { getTrip, getMapData, createDay, createStop } from "@/lib/api";
-import type { TripDetail, MapData, Stop } from "@/types";
+import { getTrip, getMapData, createDay, createStop, getTripMedia } from "@/lib/api";
+import type { TripDetail, MapData, Stop, MediaItem } from "@/types";
 import dynamic from "next/dynamic";
 import TimelineSlider from "@/components/timeline/TimelineSlider";
 import MediaGallery from "@/components/media/MediaGallery";
@@ -29,6 +29,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTab, setActiveTab] = useState<"timeline" | "media" | "upload" | "add">("timeline");
   const [slideshowStop, setSlideshowStop] = useState<Stop | null>(null);
+  const [tripMedia, setTripMedia] = useState<MediaItem[]>([]);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Flatten all stops from all days — use explicit null checks so lat=0 or lng=0 are preserved
@@ -37,22 +38,22 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     .filter((s) => s.latitude != null && s.longitude != null)
     .sort((a, b) => a.sequence_order - b.sequence_order) ?? [];
 
-  // All media: stop-linked + trip-level (stop_id = null) — deduplicated by id
-  const allMedia = [
-    ...(trip?.days?.flatMap((day) => day.stops.flatMap((stop) => stop.media)) ?? []),
-    ...(trip?.media ?? []),
-  ].filter((m, idx, arr) => arr.findIndex((x) => x.id === m.id) === idx);
+  // All media: use tripMedia (fetched from /api/trips/{id}/media — includes all media for the trip)
+  // This is the single source of truth — stop-linked and unlinked deduplicated by id
+  const allMedia = tripMedia;
 
 
-  // Load trip data
+  // Load trip data and all media
   const loadTrip = useCallback(async () => {
     try {
-      const [tripData, mapDataResult] = await Promise.all([
+      const [tripData, mapDataResult, mediaData] = await Promise.all([
         getTrip(resolvedParams.id),
         getMapData(resolvedParams.id),
+        getTripMedia(resolvedParams.id),
       ]);
       setTrip(tripData);
       setMapData(mapDataResult);
+      setTripMedia(mediaData);
     } catch (err) {
       console.error("Failed to load trip:", err);
     } finally {

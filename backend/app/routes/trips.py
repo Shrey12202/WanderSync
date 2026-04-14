@@ -64,6 +64,31 @@ async def delete_trip_route(trip_id: UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Trip not found")
 
 
+
+@router.get("/{trip_id}/media")
+async def get_trip_media_route(trip_id: UUID, db: AsyncSession = Depends(get_db)):
+    """
+    Return all media items for a trip — both stop-linked and trip-level (stop_id = null).
+    Ordered by taken_at asc then created_at asc.
+    """
+    from sqlalchemy import select
+    from app.models.media import Media
+    from app.schemas.media import MediaResponse
+
+    trip = await get_trip_detail(db, trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    stmt = (
+        select(Media)
+        .where(Media.trip_id == trip_id)
+        .order_by(Media.taken_at.asc().nullslast(), Media.created_at.asc())
+    )
+    result = await db.execute(stmt)
+    media_items = result.scalars().all()
+    return [MediaResponse.model_validate(m) for m in media_items]
+
+
 @router.get("/{trip_id}/debug")
 async def debug_trip_route(trip_id: UUID, db: AsyncSession = Depends(get_db)):
     """
