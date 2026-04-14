@@ -68,6 +68,11 @@ export interface MediaItem {
   created_at: string;
 }
 
+export interface MediaWithContext extends MediaItem {
+  trip_title: string;
+  stop_name: string | null;
+}
+
 export interface ExifData {
   latitude: number | null;
   longitude: number | null;

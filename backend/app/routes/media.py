@@ -1,21 +1,49 @@
 """Media upload and management routes."""
 
 from uuid import UUID
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.media import Media
-from app.schemas.media import MediaResponse, MediaUpdate, ExifResponse
+from app.models.stop import Stop
+from app.models.trip import Trip
+from app.schemas.media import MediaResponse, MediaUpdate, ExifResponse, MediaWithContext
 from app.services.media_service import process_upload
 from app.services.exif_service import extract_exif
 from app.services.storage import storage
 from app.config import settings
 
 router = APIRouter(prefix="/api/media", tags=["media"])
+
+
+@router.get("/all", response_model=List[MediaWithContext])
+async def get_all_media(db: AsyncSession = Depends(get_db)):
+    """
+    Get all media across all trips, enriched with trip title and stop name.
+    Ordered by taken_at descending (newest first).
+    """
+    stmt = (
+        select(Media, Trip.title.label("trip_title"), Stop.name.label("stop_name"))
+        .join(Trip, Media.trip_id == Trip.id)
+        .outerjoin(Stop, Media.stop_id == Stop.id)
+        .order_by(Media.taken_at.desc().nullslast(), Media.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    items = []
+    for media, trip_title, stop_name in rows:
+        item = MediaWithContext.model_validate(media)
+        item.trip_title = trip_title
+        item.stop_name = stop_name
+        items.append(item)
+    return items
+
 
 
 @router.post("/upload", response_model=MediaResponse, status_code=201)

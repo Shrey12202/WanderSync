@@ -48,3 +48,21 @@ venv.bak/
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Media Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/uploads/thumbnails/*
+!backend/uploads/thumbnails/.gitkeep
+
+# Data Files
+*.db
+*.sqlite
+*.sqlite3
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!next.config.ts
+!postcss.config.mjs
+!components.json

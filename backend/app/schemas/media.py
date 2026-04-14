@@ -41,6 +41,12 @@ class MediaResponse(BaseModel):
     created_at: datetime
 
 
+class MediaWithContext(MediaResponse):
+    """Media enriched with trip title and stop name for the global gallery."""
+    trip_title: str
+    stop_name: Optional[str] = None
+
+
 class ExifResponse(BaseModel):
     """EXIF data extracted from an uploaded image."""
     latitude: Optional[float] = None

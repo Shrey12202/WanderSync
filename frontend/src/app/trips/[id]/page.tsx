@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import TimelineSlider from "@/components/timeline/TimelineSlider";
 import MediaGallery from "@/components/media/MediaGallery";
 import UploadHandler from "@/components/media/UploadHandler";
+import StopSlideshowModal from "@/components/media/StopSlideshowModal";
 import Link from "next/link";
 import { formatDateRange } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [activeStopIndex, setActiveStopIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTab, setActiveTab] = useState<"timeline" | "media" | "upload" | "add">("timeline");
+  const [slideshowStop, setSlideshowStop] = useState<Stop | null>(null);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Flatten all stops from all days
@@ -194,6 +196,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             onStopClick={(stopId) => {
               const idx = allStops.findIndex((s) => s.id === stopId);
               if (idx >= 0) setActiveStopIndex(idx);
+              // Open slideshow for clicked stop
+              const stop = allStops.find((s) => s.id === stopId);
+              if (stop) setSlideshowStop(stop);
             }}
           />
         </div>
@@ -339,6 +344,15 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
       </div>
+
+      {/* Stop Slideshow Modal */}
+      {slideshowStop && (
+        <StopSlideshowModal
+          stopName={slideshowStop.name}
+          media={slideshowStop.media}
+          onClose={() => setSlideshowStop(null)}
+        />
+      )}
     </div>
   );
 }

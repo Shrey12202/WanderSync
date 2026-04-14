@@ -133,10 +133,29 @@ export default function MapView({
       });
     }
 
-    // Add stop markers
+    // Add stop markers — deduplicate by coordinate, show lowest sequence number
+    // Build a map of coordKey -> minIndex for all features
+    const coordMinIndex = new Map<string, number>();
+    mapData.stops.features.forEach((feature, index) => {
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      const key = `${lng.toFixed(6)},${lat.toFixed(6)}`;
+      if (!coordMinIndex.has(key) || index < coordMinIndex.get(key)!) {
+        coordMinIndex.set(key, index);
+      }
+    });
+    const renderedCoords = new Set<string>();
+
     mapData.stops.features.forEach((feature, index) => {
       const coords = feature.geometry.coordinates as [number, number];
       const props = feature.properties;
+      const key = `${coords[0].toFixed(6)},${coords[1].toFixed(6)}`;
+
+      // Only render one marker per unique coordinate (using the minimum index)
+      if (renderedCoords.has(key)) return;
+      renderedCoords.add(key);
+
+      const minIndex = coordMinIndex.get(key)!;
+      const displayNumber = minIndex + 1;
 
       const el = document.createElement("div");
       el.className = "stop-marker";
@@ -150,7 +169,7 @@ export default function MapView({
         box-shadow: 0 0 12px rgba(245,158,11,0.4);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
       `;
-      el.textContent = String(index + 1);
+      el.textContent = String(displayNumber);
       el.onmouseenter = () => {
         el.style.transform = "scale(1.3)";
         el.style.boxShadow = "0 0 20px rgba(245,158,11,0.7)";
@@ -162,7 +181,7 @@ export default function MapView({
 
       const popup = new mapboxgl.Popup({ offset: 20, closeButton: false }).setHTML(`
         <div style="min-width:140px">
-          <strong style="font-size:14px">${props.name || "Stop " + (index + 1)}</strong>
+          <strong style="font-size:14px">${props.name || "Stop " + displayNumber}</strong>
           ${props.arrival_time ? `<p style="margin:4px 0 0;font-size:12px;opacity:0.7">${new Date(props.arrival_time as string).toLocaleString()}</p>` : ""}
         </div>
       `);

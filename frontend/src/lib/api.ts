@@ -14,6 +14,7 @@ import type {
   CreateStopRequest,
   UpdateStopRequest,
   MediaItem,
+  MediaWithContext,
   ExifData,
   MapData,
   GeoJSONFeatureCollection,
@@ -177,6 +178,10 @@ export async function extractExif(file: File): Promise<ExifData> {
 
 export async function deleteMedia(mediaId: string): Promise<void> {
   return request<void>(`/api/media/${mediaId}`, { method: "DELETE" });
+}
+
+export async function getAllMedia(): Promise<MediaWithContext[]> {
+  return request<MediaWithContext[]>("/api/media/all");
 }
 
 // ── Map Data ────────────────────────────────────────────────
