@@ -37,9 +37,12 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     .filter((s) => s.latitude != null && s.longitude != null)
     .sort((a, b) => a.sequence_order - b.sequence_order) ?? [];
 
-  const allMedia = trip?.days?.flatMap((day) =>
-    day.stops.flatMap((stop) => stop.media)
-  ) ?? [];
+  // All media: stop-linked + trip-level (stop_id = null) — deduplicated by id
+  const allMedia = [
+    ...(trip?.days?.flatMap((day) => day.stops.flatMap((stop) => stop.media)) ?? []),
+    ...(trip?.media ?? []),
+  ].filter((m, idx, arr) => arr.findIndex((x) => x.id === m.id) === idx);
+
 
   // Load trip data
   const loadTrip = useCallback(async () => {

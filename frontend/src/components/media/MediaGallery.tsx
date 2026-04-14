@@ -176,9 +176,10 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
 
           {/* Main content */}
           <div
-            className="relative max-w-5xl max-h-[90vh] w-full flex flex-col items-center justify-center px-16"
+            className="relative max-w-5xl max-h-[90vh] w-full flex flex-col px-16 overflow-y-auto custom-scrollbar"
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="flex items-center justify-center py-4">
             {activeMedia.file_type === "image" ? (
               <img
                 src={getMediaUrl(activeMedia.file_path)}
@@ -193,6 +194,7 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
                 className="max-w-full max-h-[60vh] rounded-xl shadow-2xl"
               />
             )}
+            </div>
 
             {/* Info / Edit Panel */}
             <div className="w-full mt-4 bg-black/60 border border-white/10 rounded-xl backdrop-blur-sm overflow-hidden">

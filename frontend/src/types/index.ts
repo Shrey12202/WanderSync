@@ -23,6 +23,7 @@ export interface TripSummary extends Trip {
 
 export interface TripDetail extends Trip {
   days: Day[];
+  media: MediaItem[];  // trip-level media (not assigned to a stop)
 }
 
 export interface Day {

@@ -56,14 +56,15 @@ async def get_trips(db: AsyncSession) -> List[dict]:
 
 
 async def get_trip_detail(db: AsyncSession, trip_id: UUID) -> Optional[Trip]:
-    """Get a trip with all nested days → stops → media."""
+    """Get a trip with all nested days → stops → media, plus trip-level media."""
     stmt = (
         select(Trip)
         .where(Trip.id == trip_id)
         .options(
             selectinload(Trip.days)
             .selectinload(Day.stops)
-            .selectinload(Stop.media)
+            .selectinload(Stop.media),
+            selectinload(Trip.media),  # trip-level media (stop_id = null)
         )
     )
     result = await db.execute(stmt)

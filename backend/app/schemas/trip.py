@@ -48,9 +48,11 @@ class TripSummary(TripBase):
 class TripDetail(TripBase):
     """Full trip with nested days, stops, media."""
     days: List["DayResponse"] = []
+    media: List["MediaResponse"] = []  # trip-level media not assigned to a stop
 
 
 # Import here to avoid circular deps
 from app.schemas.day import DayResponse  # noqa: E402
+from app.schemas.media import MediaResponse  # noqa: E402
 
 TripDetail.model_rebuild()
