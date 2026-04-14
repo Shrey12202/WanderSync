@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MapData } from "@/types";
-import { getThumbnailUrl } from "@/lib/api";
+import { getThumbnailUrl, getMediaUrl } from "@/lib/api";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -66,16 +66,16 @@ export default function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
-    
+
     const targetStyle = showHeatmap ? "mapbox://styles/mapbox/dark-v11" : "mapbox://styles/mapbox/outdoors-v12";
     if (containerRef.current?.dataset.style === targetStyle) return;
-    
-    setMapLoaded(false); // Pause rendering layers
+
+    setMapLoaded(false);
     map.setStyle(targetStyle);
     if (containerRef.current) containerRef.current.dataset.style = targetStyle;
-    
+
     map.once("style.load", () => {
-      setMapLoaded(true); // Reactivate rendering layers
+      setMapLoaded(true);
     });
   }, [showHeatmap, mapLoaded]);
 
@@ -103,7 +103,6 @@ export default function MapView({
         data: mapData.path as GeoJSON.Feature,
       });
 
-      // Glow effect layer
       map.addLayer({
         id: "trip-path",
         type: "line",
@@ -116,7 +115,6 @@ export default function MapView({
         },
       });
 
-      // Main path layer
       map.addLayer({
         id: "trip-path-animated",
         type: "line",
@@ -133,9 +131,11 @@ export default function MapView({
       });
     }
 
-    // Add stop markers — deduplicate by coordinate, show lowest sequence number
-    // Build a map of coordKey -> minIndex for all features
+    // Build coordKey -> minIndex map for deduplication
     const coordMinIndex = new Map<string, number>();
+    // Also gather media per stop coordinate for hover preview
+    const coordStopData = new Map<string, { id: string; name: string; mediaUrls: string[] }>();
+
     mapData.stops.features.forEach((feature, index) => {
       const [lng, lat] = feature.geometry.coordinates as [number, number];
       const key = `${lng.toFixed(6)},${lat.toFixed(6)}`;
@@ -143,6 +143,14 @@ export default function MapView({
         coordMinIndex.set(key, index);
       }
     });
+
+    // Map stop id -> media thumbnails (from mapData.media features)
+    const stopMediaMap = new Map<string, string[]>();
+    if (mapData.media?.features) {
+      // Since media features don't carry stop_id we match by proximity — skip for now
+      // Instead gather all geotagged media URLs for preview on nearby markers
+    }
+
     const renderedCoords = new Set<string>();
 
     mapData.stops.features.forEach((feature, index) => {
@@ -150,7 +158,6 @@ export default function MapView({
       const props = feature.properties;
       const key = `${coords[0].toFixed(6)},${coords[1].toFixed(6)}`;
 
-      // Only render one marker per unique coordinate (using the minimum index)
       if (renderedCoords.has(key)) return;
       renderedCoords.add(key);
 
@@ -168,27 +175,88 @@ export default function MapView({
         font-size: 11px; font-weight: 700; color: #0a0e1a;
         box-shadow: 0 0 12px rgba(245,158,11,0.4);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+        position: relative; z-index: 1;
       `;
       el.textContent = String(displayNumber);
+
+      // Custom hover tooltip with photo preview
+      const tooltip = document.createElement("div");
+      tooltip.style.cssText = `
+        position: absolute;
+        bottom: 36px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(10,14,26,0.95);
+        border: 1px solid rgba(245,158,11,0.3);
+        border-radius: 12px;
+        padding: 10px;
+        min-width: 160px;
+        max-width: 200px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        z-index: 100;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+        white-space: nowrap;
+      `;
+
+      const stopName = props.name || `Stop ${displayNumber}`;
+      const arrivalStr = props.arrival_time ? new Date(props.arrival_time as string).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
+
+      // Find nearby media thumbnails by checking all media features for same coords
+      const nearbyMedia: string[] = [];
+      if (mapData.media?.features) {
+        mapData.media.features.forEach((mf: any) => {
+          const [mlng, mlat] = mf.geometry.coordinates as [number, number];
+          const mk = `${mlng.toFixed(4)},${mlat.toFixed(4)}`;
+          const sk = `${coords[0].toFixed(4)},${coords[1].toFixed(4)}`;
+          if (mk === sk && nearbyMedia.length < 3) {
+            nearbyMedia.push(getThumbnailUrl(mf.properties.thumbnail_path, mf.properties.file_path));
+          }
+        });
+      }
+
+      tooltip.innerHTML = `
+        <div style="font-size:12px; font-weight:700; color:#fbbf24; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;">
+          📍 ${stopName}
+        </div>
+        ${arrivalStr ? `<div style="font-size:10px; color:rgba(255,255,255,0.5); margin-bottom:6px;">${arrivalStr}</div>` : ""}
+        ${nearbyMedia.length > 0 ? `
+          <div style="display:flex; gap:4px; margin-top:4px;">
+            ${nearbyMedia.map(url => `
+              <div style="width:48px; height:48px; border-radius:6px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); flex-shrink:0;">
+                <img src="${url}" style="width:100%;height:100%;object-fit:cover;" />
+              </div>
+            `).join("")}
+          </div>
+        ` : `<div style="font-size:10px; color:rgba(255,255,255,0.3);">Click to view stop</div>`}
+        <div style="
+          position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
+          width:10px; height:10px; background:rgba(10,14,26,0.95);
+          border-right:1px solid rgba(245,158,11,0.3);
+          border-bottom:1px solid rgba(245,158,11,0.3);
+          transform:translateX(-50%) rotate(45deg);
+        "></div>
+      `;
+
+      el.appendChild(tooltip);
+
       el.onmouseenter = () => {
         el.style.transform = "scale(1.3)";
         el.style.boxShadow = "0 0 20px rgba(245,158,11,0.7)";
+        el.style.zIndex = "10";
+        tooltip.style.opacity = "1";
       };
       el.onmouseleave = () => {
         el.style.transform = "scale(1)";
         el.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
+        el.style.zIndex = "1";
+        tooltip.style.opacity = "0";
       };
-
-      const popup = new mapboxgl.Popup({ offset: 20, closeButton: false }).setHTML(`
-        <div style="min-width:140px">
-          <strong style="font-size:14px">${props.name || "Stop " + displayNumber}</strong>
-          ${props.arrival_time ? `<p style="margin:4px 0 0;font-size:12px;opacity:0.7">${new Date(props.arrival_time as string).toLocaleString()}</p>` : ""}
-        </div>
-      `);
 
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(coords)
-        .setPopup(popup)
         .addTo(map);
 
       el.addEventListener("click", () => {
@@ -198,7 +266,7 @@ export default function MapView({
       markersRef.current.push(marker);
     });
 
-    // Add Media markers
+    // Add Media markers (geotagged photos on the map)
     if (mapData.media && mapData.media.features) {
       mapData.media.features.forEach((feature: any) => {
         const coords = feature.geometry.coordinates as [number, number];
@@ -213,24 +281,44 @@ export default function MapView({
           background-size: cover; background-position: center;
           border: 3px solid #14b8a6; box-shadow: 0 0 10px rgba(0,0,0,0.5);
           cursor: pointer; transition: transform 0.2s ease, z-index 0.2s;
+          position: relative; z-index: 1;
         `;
-        
-        el.onmouseenter = () => { el.style.transform = "scale(2)"; el.style.zIndex = "10"; };
-        el.onmouseleave = () => { el.style.transform = "scale(1)"; el.style.zIndex = "1"; };
 
-        const popup = new mapboxgl.Popup({ offset: 20, closeButton: false }).setHTML(`
-          <div style="min-width:140px; text-align:center; padding-top:4px;">
-             ${props.caption ? `<p style="margin:4px 0 0; font-size:12px; font-weight:bold; color:#f59e0b;">${props.caption}</p>` : ""}
-             ${props.taken_at ? `<p style="margin:2px 0 0; font-size:10px; opacity:0.8;">${new Date(props.taken_at).toLocaleDateString()}</p>` : ""}
-          </div>
-        `);
+        // Media hover tooltip
+        const mediaTooltip = document.createElement("div");
+        mediaTooltip.style.cssText = `
+          position: absolute;
+          bottom: 44px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(10,14,26,0.95);
+          border: 1px solid rgba(20,184,166,0.3);
+          border-radius: 10px;
+          padding: 8px 10px;
+          min-width: 130px;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.2s ease;
+          z-index: 100;
+          backdrop-filter: blur(8px);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        `;
 
-        // Adding media markers above the line layer conceptually
+        const captionStr = props.caption ? `<div style="font-size:11px;color:white;font-weight:600;margin-bottom:2px;">${props.caption}</div>` : "";
+        const dateStr = props.taken_at ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);">${new Date(props.taken_at).toLocaleDateString()}</div>` : "";
+        mediaTooltip.innerHTML = `
+          <img src="${thumbUrl}" style="width:100%;height:70px;object-fit:cover;border-radius:6px;margin-bottom:6px;" />
+          ${captionStr}${dateStr}
+        `;
+        el.appendChild(mediaTooltip);
+
+        el.onmouseenter = () => { el.style.transform = "scale(1.8)"; el.style.zIndex = "10"; mediaTooltip.style.opacity = "1"; };
+        el.onmouseleave = () => { el.style.transform = "scale(1)"; el.style.zIndex = "1"; mediaTooltip.style.opacity = "0"; };
+
         const marker = new mapboxgl.Marker({ element: el })
           .setLngLat(coords)
-          .setPopup(popup)
           .addTo(map);
-          
+
         markersRef.current.push(marker);
       });
     }
@@ -308,7 +396,6 @@ export default function MapView({
           "line-width": 4,
           "line-opacity": 0.8,
         },
-        // Put the paths below the stop-markers but above the map background
       });
     }
   }, [globalPaths, mapLoaded]);
@@ -323,7 +410,6 @@ export default function MapView({
       const coords = feature.geometry.coordinates as [number, number];
       map.flyTo({ center: coords, zoom: 14, duration: 1200, pitch: 45 });
 
-      // Highlight active marker
       markersRef.current.forEach((marker, i) => {
         const el = marker.getElement();
         if (i === activeStopIndex) {

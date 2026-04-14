@@ -31,10 +31,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [slideshowStop, setSlideshowStop] = useState<Stop | null>(null);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Flatten all stops from all days
+  // Flatten all stops from all days — use explicit null checks so lat=0 or lng=0 are preserved
   const allStops: Stop[] = trip?.days
     ?.flatMap((day) => day.stops)
-    .filter((s) => s.latitude && s.longitude)
+    .filter((s) => s.latitude != null && s.longitude != null)
     .sort((a, b) => a.sequence_order - b.sequence_order) ?? [];
 
   const allMedia = trip?.days?.flatMap((day) =>
@@ -242,7 +242,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             )}
 
             {activeTab === "media" && (
-              <MediaGallery media={allMedia} />
+              <MediaGallery media={allMedia} onMediaUpdate={() => loadTrip()} />
             )}
 
             {activeTab === "upload" && (

@@ -20,6 +20,7 @@ class MediaUpdate(BaseModel):
     caption: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    taken_at: Optional[datetime] = None
 
 
 class MediaResponse(BaseModel):

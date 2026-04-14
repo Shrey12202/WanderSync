@@ -180,6 +180,17 @@ export async function deleteMedia(mediaId: string): Promise<void> {
   return request<void>(`/api/media/${mediaId}`, { method: "DELETE" });
 }
 
+export async function updateMedia(
+  mediaId: string,
+  data: { caption?: string; latitude?: number | null; longitude?: number | null; taken_at?: string | null }
+): Promise<MediaItem> {
+  return request<MediaItem>(`/api/media/${mediaId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+
 export async function getAllMedia(): Promise<MediaWithContext[]> {
   return request<MediaWithContext[]>("/api/media/all");
 }
