@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MapData } from "@/types";
@@ -29,16 +29,31 @@ export default function MapView({
   activeStopIndex,
   className = "",
 }: MapViewProps) {
-  // wrapperRef = outer React-controlled div (safe to modify)
-  // canvasRef  = inner Mapbox canvas div (NEVER modify its style/children)
+  // Two separate refs:
+  //   wrapperRef → our outer React div (safe to use, position:relative)
+  //   canvasRef  → Mapbox's canvas container (NEVER modify its CSS or add children here)
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  // Store refs to the INNER circle elements so we can animate them without touching Mapbox's transform
+  const innerMarkersRef = useRef<HTMLDivElement[]>([]);
+  const mapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [currentStyle, setCurrentStyle] = useState("");
 
-  // Create the floating tooltip once, appended to the OUTER wrapper (not the Mapbox canvas)
+  const normalStyle = "mapbox://styles/mapbox/outdoors-v12";
+  const heatmapStyle = "mapbox://styles/mapbox/dark-v11";
+
+  // Helper to safely remove layers/sources
+  const safeRemoveLayer = useCallback((map: mapboxgl.Map, id: string) => {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }, []);
+  const safeRemoveSource = useCallback((map: mapboxgl.Map, id: string) => {
+    if (map.getSource(id)) map.removeSource(id);
+  }, []);
+
+  // Create floating tooltip appended to wrapperRef (NOT to Mapbox's canvas)
   useEffect(() => {
     if (!wrapperRef.current) return;
     const tip = document.createElement("div");
@@ -57,19 +72,24 @@ export default function MapView({
       backdrop-filter: blur(10px);
       box-shadow: 0 8px 32px rgba(0,0,0,0.7);
       font-family: system-ui, sans-serif;
+      transform: translate(-50%, calc(-100% - 10px));
     `;
     wrapperRef.current.appendChild(tip);
     tooltipRef.current = tip;
-    return () => { tip.remove(); tooltipRef.current = null; };
+    return () => {
+      tip.remove();
+      tooltipRef.current = null;
+    };
   }, []);
 
-  // Initialize map — mount into canvasRef, never touch wrapperRef from Mapbox
+  // Initialize map once
   useEffect(() => {
     if (!canvasRef.current || mapRef.current) return;
 
+    const initialStyle = normalStyle; // always start with color map
     const map = new mapboxgl.Map({
       container: canvasRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: initialStyle,
       center: [0, 20],
       zoom: 2,
       pitch: 0,
@@ -77,32 +97,55 @@ export default function MapView({
     });
 
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
-    map.on("load", () => setMapLoaded(true));
+
+    map.on("load", () => {
+      setMapLoaded(true);
+      setCurrentStyle(initialStyle);
+    });
+
     mapRef.current = map;
 
     return () => {
       map.remove();
       mapRef.current = null;
       setMapLoaded(false);
+      setCurrentStyle("");
     };
   }, []);
 
-  // Render trip data on map
+  // Switch map style when heatmap toggle changes — preserves markers since they're DOM-based
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    const targetStyle = showHeatmap ? heatmapStyle : normalStyle;
+    if (currentStyle === targetStyle) return;
+
+    setMapLoaded(false); // pause other effects while style loads
+    map.setStyle(targetStyle);
+
+    map.once("style.load", () => {
+      setCurrentStyle(targetStyle);
+      setMapLoaded(true);
+    });
+  }, [showHeatmap, mapLoaded, currentStyle]);
+
+  // Render trip stops on map
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !mapData) return;
 
-    // Clear existing markers
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = [];
+    // Clear existing Mapbox markers
+    mapboxMarkersRef.current.forEach((m) => m.remove());
+    mapboxMarkersRef.current = [];
+    innerMarkersRef.current = [];
 
-    // Remove existing sources/layers
-    ["trip-path", "trip-path-animated"].forEach((id) => {
-      if (map.getLayer(id)) map.removeLayer(id);
-    });
-    if (map.getSource("trip-path-source")) map.removeSource("trip-path-source");
+    // Remove trip path layers
+    safeRemoveLayer(map, "trip-path");
+    safeRemoveLayer(map, "trip-path-animated");
+    safeRemoveSource(map, "trip-path-source");
 
-    // Add path
+    // Draw path
     if (mapData.path) {
       map.addSource("trip-path-source", {
         type: "geojson",
@@ -123,7 +166,7 @@ export default function MapView({
       });
     }
 
-    // Deduplication: keep lowest index per coordinate
+    // Deduplication: earliest index per coordinate
     const coordMinIndex = new Map<string, number>();
     mapData.stops.features.forEach((feature, index) => {
       const [lng, lat] = feature.geometry.coordinates as [number, number];
@@ -145,9 +188,20 @@ export default function MapView({
       const minIndex = coordMinIndex.get(key)!;
       const displayNumber = minIndex + 1;
 
-      // ── Pure number marker — NO children, NO relative positioning ──
+      // ── CRITICAL: two-layer structure ───────────────────────────────────────
+      // `el`    — outer container: Mapbox writes its translate() transform here.
+      //           We NEVER set el.style.transform — that would overwrite Mapbox's position.
+      // `inner` — inner visual circle: we freely animate this with scale/box-shadow.
+      // ────────────────────────────────────────────────────────────────────────
       const el = document.createElement("div");
       el.style.cssText = `
+        width: 28px;
+        height: 28px;
+        position: relative;
+      `;
+
+      const inner = document.createElement("div");
+      inner.style.cssText = `
         width: 28px;
         height: 28px;
         border-radius: 50%;
@@ -163,10 +217,14 @@ export default function MapView({
         box-shadow: 0 0 12px rgba(245,158,11,0.4);
         transition: transform 0.15s ease, box-shadow 0.15s ease;
         user-select: none;
+        position: absolute;
+        inset: 0;
       `;
-      el.textContent = String(displayNumber);
+      inner.textContent = String(displayNumber);
+      el.appendChild(inner);
+      innerMarkersRef.current.push(inner);
 
-      // Build tooltip HTML for this stop
+      // Build tooltip HTML
       const stopName = props.name || `Stop ${displayNumber}`;
       const arrivalStr = props.arrival_time
         ? new Date(props.arrival_time as string).toLocaleDateString("en-US", {
@@ -174,7 +232,6 @@ export default function MapView({
           })
         : null;
 
-      // Find matching media thumbnails from mapData.media
       const nearbyThumbs: string[] = [];
       if (mapData.media?.features) {
         mapData.media.features.forEach((mf: any) => {
@@ -189,8 +246,8 @@ export default function MapView({
         });
       }
 
-      const buildTooltipHTML = () => `
-        <div style="font-size:12px;font-weight:700;color:#fbbf24;margin-bottom:${arrivalStr ? "4px" : "0"};">
+      const tooltipHTML = `
+        <div style="font-size:12px;font-weight:700;color:#fbbf24;margin-bottom:${arrivalStr ? "4px" : "2px"};">
           📍 ${stopName}
         </div>
         ${arrivalStr ? `<div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:${nearbyThumbs.length ? "6px" : "0"};">${arrivalStr}</div>` : ""}
@@ -206,47 +263,42 @@ export default function MapView({
         }
       `;
 
-      // Hover: position the tooltip in the OUTER WRAPPER, not inside the marker
-      el.addEventListener("mouseenter", () => {
-        el.style.transform = "scale(1.35)";
-        el.style.boxShadow = "0 0 20px rgba(245,158,11,0.75)";
+      // Hover on inner — animate inner only, position tooltip relative to wrapperRef
+      inner.addEventListener("mouseenter", () => {
+        inner.style.transform = "scale(1.35)";
+        inner.style.boxShadow = "0 0 20px rgba(245,158,11,0.75)";
 
         const tip = tooltipRef.current;
         const wrapper = wrapperRef.current;
         if (!tip || !wrapper) return;
 
-        tip.innerHTML = buildTooltipHTML();
+        tip.innerHTML = tooltipHTML;
         tip.style.opacity = "1";
 
-        // Position relative to wrapperRef
-        const elRect = el.getBoundingClientRect();
+        const innerRect = inner.getBoundingClientRect();
         const wRect = wrapper.getBoundingClientRect();
-
-        const tipLeft = elRect.left - wRect.left + elRect.width / 2;
-        const tipTop = elRect.top - wRect.top;
-
-        tip.style.left = `${tipLeft}px`;
-        tip.style.top = `${tipTop}px`;
-        // After measuring tip width/height, offset upward
-        tip.style.transform = "translate(-50%, calc(-100% - 10px))";
+        tip.style.left = `${innerRect.left - wRect.left + innerRect.width / 2}px`;
+        tip.style.top = `${innerRect.top - wRect.top}px`;
       });
 
-      el.addEventListener("mouseleave", () => {
-        el.style.transform = "scale(1)";
-        el.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
+      inner.addEventListener("mouseleave", () => {
+        inner.style.transform = "scale(1)";
+        inner.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
         if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
       });
 
-      el.addEventListener("click", () => {
+      inner.addEventListener("click", () => {
         if (onStopClick) onStopClick(props.id as string);
       });
 
-      // anchor: "center" so the number circle sits exactly on the coordinate
+      // anchor:"center" places the center of `el` at the coordinate.
+      // Mapbox will write translate(Xpx, Ypx) translate(-50%,-50%) to el.style.transform.
+      // We never touch el.style.transform ourselves.
       const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
         .setLngLat(coords)
         .addTo(map);
 
-      markersRef.current.push(marker);
+      mapboxMarkersRef.current.push(marker);
     });
 
     // Fit bounds
@@ -256,16 +308,16 @@ export default function MapView({
         { padding: 80, duration: 1500 }
       );
     }
-  }, [mapData, mapLoaded, onStopClick]);
+  }, [mapData, mapLoaded, onStopClick, safeRemoveLayer, safeRemoveSource]);
 
-  // Heatmap layer  
+  // Heatmap layer
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
-    if (map.getLayer("heatmap-layer")) map.removeLayer("heatmap-layer");
-    if (map.getSource("heatmap-source")) map.removeSource("heatmap-source");
+    safeRemoveLayer(map, "heatmap-layer");
+    safeRemoveSource(map, "heatmap-source");
 
-    if (showHeatmap && heatmapData && heatmapData.features.length > 0) {
+    if (showHeatmap && heatmapData && heatmapData.features?.length > 0) {
       map.addSource("heatmap-source", { type: "geojson", data: heatmapData });
       map.addLayer({
         id: "heatmap-layer",
@@ -288,14 +340,14 @@ export default function MapView({
         },
       });
     }
-  }, [heatmapData, showHeatmap, mapLoaded]);
+  }, [heatmapData, showHeatmap, mapLoaded, safeRemoveLayer, safeRemoveSource]);
 
   // Global paths layer
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
-    if (map.getLayer("global-paths-layer")) map.removeLayer("global-paths-layer");
-    if (map.getSource("global-paths-source")) map.removeSource("global-paths-source");
+    safeRemoveLayer(map, "global-paths-layer");
+    safeRemoveSource(map, "global-paths-source");
 
     if (globalPaths && globalPaths.features?.length > 0) {
       map.addSource("global-paths-source", { type: "geojson", data: globalPaths });
@@ -307,9 +359,9 @@ export default function MapView({
         paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.8 },
       });
     }
-  }, [globalPaths, mapLoaded]);
+  }, [globalPaths, mapLoaded, safeRemoveLayer, safeRemoveSource]);
 
-  // Fly to active stop
+  // Highlight active stop — animate inner circle only, never el
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapData || activeStopIndex === undefined) return;
@@ -318,30 +370,26 @@ export default function MapView({
     if (feature) {
       const coords = feature.geometry.coordinates as [number, number];
       map.flyTo({ center: coords, zoom: 14, duration: 1200, pitch: 45 });
-
-      markersRef.current.forEach((marker, i) => {
-        const el = marker.getElement();
-        if (i === activeStopIndex) {
-          el.style.transform = "scale(1.4)";
-          el.style.boxShadow = "0 0 24px rgba(245,158,11,0.8)";
-        } else {
-          el.style.transform = "scale(1)";
-          el.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
-        }
-      });
     }
+
+    innerMarkersRef.current.forEach((inner, i) => {
+      if (i === activeStopIndex) {
+        inner.style.transform = "scale(1.4)";
+        inner.style.boxShadow = "0 0 24px rgba(245,158,11,0.8)";
+      } else {
+        inner.style.transform = "scale(1)";
+        inner.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
+      }
+    });
   }, [activeStopIndex, mapData]);
 
   return (
-    // wrapperRef: outer React div — safe to append tooltip, set position:relative
     <div ref={wrapperRef} className={`relative w-full h-full ${className}`}>
-      {/* canvasRef: Mapbox mounts here — never add children or change styles */}
+      {/* Mapbox mounts here — we never add children or change styles on this div */}
       <div ref={canvasRef} className="w-full h-full rounded-2xl overflow-hidden" />
       {!mapLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-bg)] rounded-2xl pointer-events-none">
-          <div className="text-[var(--color-text-secondary)] text-sm animate-pulse">
-            Loading map...
-          </div>
+          <p className="text-[var(--color-text-secondary)] text-sm animate-pulse">Loading map...</p>
         </div>
       )}
     </div>
