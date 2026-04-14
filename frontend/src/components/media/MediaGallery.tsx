@@ -153,13 +153,13 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
       {/* Cinematic Lightbox */}
       {activeMedia && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 animate-fade-in backdrop-blur-md"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-start overflow-y-auto bg-black/95 animate-fade-in backdrop-blur-md pt-10 pb-10"
           onClick={() => { if (!editing) { setLightboxIndex(null); setEditing(false); } }}
         >
           {/* Close */}
           <button
             onClick={() => { setLightboxIndex(null); setEditing(false); }}
-            className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors z-50 text-4xl"
+            className="fixed top-6 right-6 text-white/70 hover:text-white transition-colors z-50 text-4xl"
           >
             &times;
           </button>
@@ -168,18 +168,19 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
           {!editing && (
             <button
               onClick={(e) => { e.stopPropagation(); showPrev(); }}
-              className="absolute left-4 p-4 text-white/50 hover:text-white transition-colors text-5xl z-50"
+              className="fixed left-4 top-1/2 -translate-y-1/2 p-4 text-white/50 hover:text-white transition-colors text-5xl z-50"
             >
               &#8249;
             </button>
           )}
 
-          {/* Main content */}
+          {/* Main content — no max-h, let parent scroll */}
           <div
-            className="relative max-w-5xl max-h-[90vh] w-full flex flex-col px-16 overflow-y-auto custom-scrollbar"
+            className="relative max-w-3xl w-full flex flex-col px-12"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-center py-4">
+            {/* Image/Video */}
+            <div className="flex items-center justify-center w-full">
             {activeMedia.file_type === "image" ? (
               <img
                 src={getMediaUrl(activeMedia.file_path)}
@@ -314,7 +315,7 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
           {!editing && (
             <button
               onClick={(e) => { e.stopPropagation(); showNext(); }}
-              className="absolute right-4 p-4 text-white/50 hover:text-white transition-colors text-5xl z-50"
+              className="fixed right-4 top-1/2 -translate-y-1/2 p-4 text-white/50 hover:text-white transition-colors text-5xl z-50"
             >
               &#8250;
             </button>

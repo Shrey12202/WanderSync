@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict
+from app.schemas.media import MediaResponse  # noqa: E402 — no circular dep, media.py imports nothing local
 
 
 # ── Request schemas ──────────────────────────────────────────
@@ -48,11 +49,10 @@ class TripSummary(TripBase):
 class TripDetail(TripBase):
     """Full trip with nested days, stops, media."""
     days: List["DayResponse"] = []
-    media: List["MediaResponse"] = []  # trip-level media not assigned to a stop
+    media: List[MediaResponse] = []  # trip-level media not assigned to a stop
 
 
-# Import here to avoid circular deps
+# Import here to avoid circular deps with day→stop
 from app.schemas.day import DayResponse  # noqa: E402
-from app.schemas.media import MediaResponse  # noqa: E402
 
 TripDetail.model_rebuild()
