@@ -5,12 +5,15 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-# Async engine for PostgreSQL
+# Async engine for PostgreSQL.
+# Uses async_database_url which normalises the scheme for asyncpg,
+# and keeps pool small enough to fit inside free-tier DB connection limits.
 engine = create_async_engine(
-    settings.database_url,
+    settings.async_database_url,
     echo=False,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=5,       # Free tier DBs (Neon, Supabase) cap at ~20 connections
+    max_overflow=10,
+    pool_pre_ping=True,  # Helps recover from idle-timeout disconnects on free tier
 )
 
 # Session factory
