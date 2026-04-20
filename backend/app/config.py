@@ -33,19 +33,19 @@ class Settings(BaseSettings):
         """Return an asyncpg-compatible database URL."""
         url = self.database_url
         
-        # Strip channel_binding if present (sometimes causes issues with asyncpg)
-        if "channel_binding=" in url:
-            import re
-            url = re.sub(r'[&?]channel_binding=[^&]*', '', url)
-
+        # 1. Standardise the scheme
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql+asyncpg://", 1)
         elif url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         
-        # Ensure asyncpg is the dialect
-        if "postgresql+asyncpg://" not in url:
-            url = url.replace("postgresql://", "postgresql+asyncpg://")
+        # 2. Strip problematic query parameters that asyncpg doesn't support
+        # (sslmode and channel_binding cause TypeError in asyncpg)
+        if "?" in url:
+            base_url, query_params = url.split("?", 1)
+            params = [p for p in query_params.split("&") 
+                     if not p.startswith("sslmode=") and not p.startswith("channel_binding=")]
+            url = f"{base_url}?{'&'.join(params)}" if params else base_url
             
         return url
 

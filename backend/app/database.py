@@ -14,6 +14,8 @@ engine = create_async_engine(
     pool_size=5,       # Free tier DBs (Neon, Supabase) cap at ~20 connections
     max_overflow=10,
     pool_pre_ping=True,  # Helps recover from idle-timeout disconnects on free tier
+    # Neon/Supabase require SSL. asyncpg uses the 'ssl' argument.
+    connect_args={"ssl": True} if "localhost" not in settings.database_url else {}
 )
 
 # Session factory
