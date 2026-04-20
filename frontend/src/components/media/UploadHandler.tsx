@@ -2,14 +2,14 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { uploadMedia, extractExif } from "@/lib/api";
-import type { ExifData } from "@/types";
+import type { ExifData, MediaItem } from "@/types";
 
 interface UploadHandlerProps {
   tripId: string;
   stopId?: string;
   defaultLat?: number;
   defaultLng?: number;
-  onUploadComplete: () => void;
+  onUploadComplete: (media: MediaItem) => void;
 }
 
 export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, onUploadComplete }: UploadHandlerProps) {
@@ -92,7 +92,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       const parsedLng = overrideLng ? parseFloat(overrideLng) : defaultLng;
       const parsedDate = overrideDate ? new Date(overrideDate).toISOString() : undefined;
 
-      await uploadMedia(file, tripId, stopId, undefined, parsedLat, parsedLng, parsedDate);
+      const media = await uploadMedia(file, tripId, stopId, undefined, parsedLat, parsedLng, parsedDate);
 
       setStep("idle");
       setFile(null);
@@ -100,7 +100,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       setOverrideLng("");
       setOverrideDate("");
       setSearchQuery("");
-      onUploadComplete();
+      onUploadComplete(media);
     } catch (err: any) {
       setError(err.message || "Failed to upload");
       setStep("confirm");
