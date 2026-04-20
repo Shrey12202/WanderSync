@@ -19,6 +19,11 @@ from app.routes import trips, days, stops, media, map_data
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create database tables on startup (dev mode)."""
+    print(f"--- WORLDMAP STARTUP ---")
+    print(f"CORS Origins: {settings.cors_origin_list}")
+    print(f"Upload Dir: {settings.upload_dir}")
+    print(f"-------------------------")
+    
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -52,6 +57,14 @@ uploads_path.mkdir(parents=True, exist_ok=True)
 app.mount("/api/uploads", StaticFiles(directory=str(uploads_path)), name="uploads")
 
 # ── Register route modules ───────────────────────────────────
+@app.get("/")
+async def root():
+    return {
+        "service": "WanderSync API",
+        "status": "online",
+        "configured_origins": settings.cors_origin_list
+    }
+
 app.include_router(trips.router)
 app.include_router(days.router)
 app.include_router(stops.router)

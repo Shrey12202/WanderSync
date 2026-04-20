@@ -26,7 +26,15 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> List[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",")]
+        """Extremely robust CORS parsing."""
+        val = self.cors_origins or ""
+        # Split by comma, strip whitespace, strip trailing slashes, remove empty strings
+        origins = [o.strip().rstrip('/') for o in val.split(",") if o.strip()]
+        
+        # If absolutely nothing is set, default to a safe-ish list
+        if not origins:
+            return ["http://localhost:3000"]
+        return origins
 
     @property
     def async_database_url(self) -> str:
