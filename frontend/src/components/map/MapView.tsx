@@ -231,20 +231,22 @@ export default function MapView({
       const minIndex = coordMinIndex.get(key)!;
       const displayNumber = minIndex + 1;
 
-      // ── CRITICAL: two-layer structure ───────────────────────────────────────
-      // `el`    — outer container: Mapbox writes its translate() transform here.
-      //           We NEVER set el.style.transform — that would overwrite Mapbox's position.
-      // `inner` — inner visual circle: we freely animate this with scale/box-shadow.
+      // ── Marker structure ────────────────────────────────────────────────────
+      // `el`    — outer wrapper: Mapbox writes its positioning transform here.
+      //           Made a flex container so it naturally sizes around `inner`.
+      //           We NEVER touch el.style.transform.
+      // `inner` — the visible circle: safe to animate scale/shadow freely.
       // ────────────────────────────────────────────────────────────────────────
       const el = document.createElement("div");
       el.style.cssText = `
         width: 28px;
         height: 28px;
-        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         margin: 0;
         padding: 0;
         box-sizing: border-box;
-        overflow: visible;
       `;
 
       const inner = document.createElement("div");
@@ -261,16 +263,13 @@ export default function MapView({
         font-size: 11px;
         line-height: 1;
         font-weight: 700;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
         color: #0a0e1a;
         box-shadow: 0 0 12px rgba(245,158,11,0.4);
         transition: transform 0.15s ease, box-shadow 0.15s ease;
         user-select: none;
         box-sizing: border-box;
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        flex-shrink: 0;
       `;
       inner.textContent = String(displayNumber);
       el.appendChild(inner);
