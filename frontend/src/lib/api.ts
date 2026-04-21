@@ -56,16 +56,15 @@ async function request<T>(
   const url = `${API_BASE}${path}`;
 
   const token = await getAuthToken();
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeader,
-      ...options.headers,
-    },
-  });
+  // Build headers as a plain Record to keep TypeScript happy with the auth header spread
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string> ?? {}),
+  };
+
+  const res = await fetch(url, { ...options, headers });
 
   if (!res.ok) {
     const body = await res.text();
