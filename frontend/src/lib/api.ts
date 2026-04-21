@@ -22,6 +22,20 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// ── Auth token cache ─────────────────────────────────────────
+// Set proactively by TokenProvider (uses useAuth hook) so it's
+// always ready before API calls fire, avoiding the window.Clerk
+// race condition.
+let _cachedToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  _cachedToken = token;
+}
+
+function getAuthToken(): string | null {
+  return _cachedToken;
+}
+
 // ── Helpers ─────────────────────────────────────────────────
 
 class ApiError extends Error {
@@ -31,31 +45,13 @@ class ApiError extends Error {
   }
 }
 
-/**
- * Gets the Clerk session token from the browser.
- * Returns null if not logged in (e.g., on public pages).
- */
-async function getAuthToken(): Promise<string | null> {
-  try {
-    // Clerk exposes the token via window.__clerk__ in the browser
-    // We use the Clerk singleton when available
-    const { Clerk } = window as any;
-    if (Clerk?.session) {
-      return await Clerk.session.getToken();
-    }
-  } catch {
-    // Not logged in or Clerk not loaded yet
-  }
-  return null;
-}
-
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
 
-  const token = await getAuthToken();
+  const token = getAuthToken();
 
   // Build headers as a plain Record to keep TypeScript happy with the auth header spread
   const headers: Record<string, string> = {
@@ -174,7 +170,7 @@ export async function uploadMedia(
   if (longitude !== undefined) formData.append("longitude", String(longitude));
   if (taken_at) formData.append("taken_at", taken_at);
 
-  const token = await getAuthToken();
+  const token = getAuthToken();
   const res = await fetch(`${API_BASE}/api/media/upload`, {
     method: "POST",
     body: formData,
@@ -192,7 +188,7 @@ export async function extractExif(file: File): Promise<ExifData> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const token = await getAuthToken();
+  const token = getAuthToken();
   const res = await fetch(`${API_BASE}/api/media/extract-exif`, {
     method: "POST",
     body: formData,

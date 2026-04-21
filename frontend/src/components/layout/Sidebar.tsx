@@ -7,7 +7,7 @@ import { useUser } from "@clerk/nextjs";
 const NAV_ITEMS = [
   { href: "/", label: "Map", icon: "🗺️" },
   { href: "/trips", label: "Dashboard", icon: "✈️" },
-  { href: "/photos", label: "Photos", icon: "📷" },
+  { href: "/photos", label: "Media", icon: "📷" },
   { href: "/upload", label: "Upload", icon: "📤" },
 ];
 
@@ -15,8 +15,13 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
 
-  const username = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Traveller";
-  const initials = username[0]?.toUpperCase() ?? "T";
+  // Prefer username → firstName → email prefix (never show full email)
+  const displayName =
+    user?.username ||
+    user?.firstName ||
+    user?.primaryEmailAddress?.emailAddress?.split("@")[0] ||
+    "Traveller";
+  const initials = displayName[0]?.toUpperCase() ?? "T";
 
   return (
     <aside className="w-[280px] h-screen flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -79,7 +84,7 @@ export default function Sidebar() {
 
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-[var(--color-text)] m-0 truncate">
-              {username}
+              {displayName}
             </p>
             <p className="text-xs text-[var(--color-text-secondary)] m-0 opacity-60 group-hover:opacity-100 transition-opacity">
               View Profile →

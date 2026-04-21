@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { uploadMedia, extractExif } from "@/lib/api";
-import type { ExifData, MediaItem } from "@/types";
+import { uploadMedia, extractExif, getTrip } from "@/lib/api";
+import type { ExifData, MediaItem, Stop } from "@/types";
 
 interface UploadHandlerProps {
   tripId: string;
@@ -18,12 +18,38 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
   const [exif, setExif] = useState<ExifData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // All stops for this trip (used for the stop picker)
+  const [tripStops, setTripStops] = useState<Stop[]>([]);
+  const [selectedExistingStopId, setSelectedExistingStopId] = useState<string>("");
+
   // Confirmation form state — always shown before upload
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [overrideLat, setOverrideLat] = useState<string>("");
   const [overrideLng, setOverrideLng] = useState<string>("");
   const [overrideDate, setOverrideDate] = useState<string>("");
+
+  // Fetch trip stops so user can pick an existing stop for location
+  useEffect(() => {
+    if (!tripId) return;
+    getTrip(tripId)
+      .then((trip) => {
+        const allStops = trip.days.flatMap((d) => d.stops);
+        setTripStops(allStops);
+      })
+      .catch(() => setTripStops([]));
+  }, [tripId]);
+
+  // When user picks an existing stop, auto-fill its coordinates
+  useEffect(() => {
+    if (!selectedExistingStopId) return;
+    const stop = tripStops.find((s) => s.id === selectedExistingStopId);
+    if (stop?.latitude != null && stop?.longitude != null) {
+      setOverrideLat(String(stop.latitude));
+      setOverrideLng(String(stop.longitude));
+      setSearchQuery(stop.name || "");
+    }
+  }, [selectedExistingStopId, tripStops]);
 
   // Geocoding
   useEffect(() => {
@@ -100,6 +126,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       setOverrideLng("");
       setOverrideDate("");
       setSearchQuery("");
+      setSelectedExistingStopId("");
       onUploadComplete(media);
     } catch (err: any) {
       setError(err.message || "Failed to upload");
@@ -117,6 +144,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
     setSuggestions([]);
     setError(null);
     setExif(null);
+    setSelectedExistingStopId("");
   };
 
   const onDrag = useCallback((e: React.DragEvent) => {
@@ -181,17 +209,38 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
           </span>
         </div>
 
+        {/* Existing stop picker */}
+        {tripStops.length > 0 && (
+          <div>
+            <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
+              📌 Use existing stop
+            </label>
+            <select
+              className={inputClass}
+              value={selectedExistingStopId}
+              onChange={(e) => setSelectedExistingStopId(e.target.value)}
+            >
+              <option value="">— Search / enter location manually —</option>
+              {tripStops.map((stop) => (
+                <option key={stop.id} value={stop.id}>
+                  {stop.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Location search */}
         <div className="relative">
           <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
-            📍 Location
+            📍 Location {selectedExistingStopId ? "(auto-filled from stop)" : ""}
           </label>
           <input
             type="text"
             className={inputClass}
             placeholder="Search a place or enter coordinates below..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setSelectedExistingStopId(""); }}
           />
           {suggestions.length > 0 && (
             <ul className="absolute z-20 w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl max-h-44 overflow-y-auto shadow-2xl custom-scrollbar">
