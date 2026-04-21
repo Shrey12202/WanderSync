@@ -80,6 +80,7 @@ export default function HomeMap() {
           heatmapData={heatmapData}
           showHeatmap={showHeatmap}
           globalPaths={globalPaths}
+          spinGlobe={true}
         />
       </div>
     </div>

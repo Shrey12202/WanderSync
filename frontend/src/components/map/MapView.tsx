@@ -15,6 +15,7 @@ interface MapViewProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   globalPaths?: any;
   showHeatmap?: boolean;
+  spinGlobe?: boolean;  // Auto-rotate globe on the home page
   onStopClick?: (stopId: string) => void;
   activeStopIndex?: number;
   className?: string;
@@ -25,6 +26,7 @@ export default function MapView({
   heatmapData,
   globalPaths,
   showHeatmap = false,
+  spinGlobe = false,
   onStopClick,
   activeStopIndex,
   className = "",
@@ -35,10 +37,11 @@ export default function MapView({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  // Store refs to the INNER circle elements so we can animate them without touching Mapbox's transform
   const innerMarkersRef = useRef<HTMLDivElement[]>([]);
   const mapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const spinAnimRef = useRef<number | null>(null);
+  const isInteractingRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [currentStyle, setCurrentStyle] = useState("");
 
@@ -86,32 +89,72 @@ export default function MapView({
   useEffect(() => {
     if (!canvasRef.current || mapRef.current) return;
 
-    const initialStyle = normalStyle; // always start with color map
+    const initialStyle = spinGlobe ? "mapbox://styles/mapbox/dark-v11" : normalStyle;
     const map = new mapboxgl.Map({
       container: canvasRef.current,
       style: initialStyle,
       center: [0, 20],
-      zoom: 2,
+      zoom: spinGlobe ? 1.5 : 2,
       pitch: 0,
       antialias: true,
-    });
+      projection: spinGlobe ? { name: "globe" } : { name: "mercator" },
+    } as any);
 
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
     map.on("load", () => {
       setMapLoaded(true);
       setCurrentStyle(initialStyle);
+
+      // Add atmosphere on globe mode
+      if (spinGlobe) {
+        map.setFog({
+          color: "rgb(5, 10, 25)",
+          "high-color": "rgb(40, 80, 140)",
+          "horizon-blend": 0.04,
+          "space-color": "rgb(5, 5, 15)",
+          "star-intensity": 0.6,
+        });
+      }
     });
+
+    // ── Auto-spin globe ────────────────────────────────────────────────────
+    if (spinGlobe) {
+      const SPEED = 0.012; // degrees per frame
+
+      const spin = () => {
+        if (!isInteractingRef.current && mapRef.current) {
+          const center = mapRef.current.getCenter();
+          center.lng -= SPEED;
+          mapRef.current.setCenter(center);
+        }
+        spinAnimRef.current = requestAnimationFrame(spin);
+      };
+
+      const stopSpin = () => { isInteractingRef.current = true; };
+      const resumeSpin = () => {
+        setTimeout(() => { isInteractingRef.current = false; }, 2000);
+      };
+
+      map.on("mousedown", stopSpin);
+      map.on("touchstart", stopSpin);
+      map.on("mouseup", resumeSpin);
+      map.on("touchend", resumeSpin);
+      map.on("dragend", resumeSpin);
+
+      spinAnimRef.current = requestAnimationFrame(spin);
+    }
 
     mapRef.current = map;
 
     return () => {
+      if (spinAnimRef.current) cancelAnimationFrame(spinAnimRef.current);
       map.remove();
       mapRef.current = null;
       setMapLoaded(false);
       setCurrentStyle("");
     };
-  }, []);
+  }, [spinGlobe]);
 
   // Switch map style when heatmap toggle changes — preserves markers since they're DOM-based
   useEffect(() => {
@@ -198,6 +241,10 @@ export default function MapView({
         width: 28px;
         height: 28px;
         position: relative;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        overflow: visible;
       `;
 
       const inner = document.createElement("div");
