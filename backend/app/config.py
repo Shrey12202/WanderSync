@@ -24,6 +24,22 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     max_upload_size: int = 50 * 1024 * 1024  # 50MB
 
+    # ── Cloudinary (optional — enables cloud storage when set) ───────────────
+    # Set CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name in Render,
+    # OR set the three individual fields below.
+    cloudinary_url: str = ""           # e.g. cloudinary://key:secret@cloud_name
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
+
+    @property
+    def use_cloudinary(self) -> bool:
+        """True when Cloudinary credentials are configured."""
+        return bool(
+            self.cloudinary_url
+            or (self.cloudinary_cloud_name and self.cloudinary_api_key and self.cloudinary_api_secret)
+        )
+
     @property
     def cors_origin_list(self) -> List[str]:
         """Extremely robust CORS parsing."""

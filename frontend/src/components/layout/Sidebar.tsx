@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { UserButton, useUser } from "@clerk/nextjs";
 
 const NAV_ITEMS = [
   { href: "/", label: "Map", icon: "🗺️" },
@@ -13,6 +14,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user } = useUser();
 
   return (
     <aside className="w-[280px] h-screen flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -23,7 +25,7 @@ export default function Sidebar() {
             🌍
           </div>
           <div>
-            <h1 className="text-lg font-bold text-[var(--color-text)] m-0 leading-tight">WorldMap</h1>
+            <h1 className="text-lg font-bold text-[var(--color-text)] m-0 leading-tight">WanderSync</h1>
             <p className="text-xs text-[var(--color-text-secondary)] m-0">Travel Journal</p>
           </div>
         </Link>
@@ -50,15 +52,24 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
+      {/* User Profile Footer */}
       <div className="p-4 border-t border-[var(--color-border)]">
-        <div className="glass rounded-xl p-4">
-          <p className="text-xs text-[var(--color-text-secondary)] m-0">
-            Personal travel journal
-          </p>
-          <p className="text-xs text-[var(--color-text-secondary)] m-0 mt-1 opacity-50">
-            v1.0.0
-          </p>
+        <div className="glass rounded-xl p-3 flex items-center gap-3">
+          <UserButton
+            appearance={{
+              elements: {
+                avatarBox: "w-9 h-9",
+              },
+            }}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-[var(--color-text)] m-0 truncate">
+              {user?.fullName || user?.primaryEmailAddress?.emailAddress || "Traveller"}
+            </p>
+            <p className="text-xs text-[var(--color-text-secondary)] m-0 opacity-60">
+              Personal Journal
+            </p>
+          </div>
         </div>
       </div>
     </aside>

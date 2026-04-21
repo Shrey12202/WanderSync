@@ -3,7 +3,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import String, Text, Date, DateTime
+from sqlalchemy import String, Text, Date, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -16,6 +16,8 @@ class Trip(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # Clerk user ID — filters trips per user in all queries
+    user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_image: Mapped[str | None] = mapped_column(Text, nullable=True)

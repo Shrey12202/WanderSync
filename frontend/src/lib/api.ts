@@ -31,15 +31,38 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Gets the Clerk session token from the browser.
+ * Returns null if not logged in (e.g., on public pages).
+ */
+async function getAuthToken(): Promise<string | null> {
+  try {
+    // Clerk exposes the token via window.__clerk__ in the browser
+    // We use the Clerk singleton when available
+    const { Clerk } = window as any;
+    if (Clerk?.session) {
+      return await Clerk.session.getToken();
+    }
+  } catch {
+    // Not logged in or Clerk not loaded yet
+  }
+  return null;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
+
+  const token = await getAuthToken();
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+
   const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...authHeader,
       ...options.headers,
     },
   });
@@ -152,9 +175,11 @@ export async function uploadMedia(
   if (longitude !== undefined) formData.append("longitude", String(longitude));
   if (taken_at) formData.append("taken_at", taken_at);
 
+  const token = await getAuthToken();
   const res = await fetch(`${API_BASE}/api/media/upload`, {
     method: "POST",
     body: formData,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 
   if (!res.ok) {
@@ -168,9 +193,11 @@ export async function extractExif(file: File): Promise<ExifData> {
   const formData = new FormData();
   formData.append("file", file);
 
+  const token = await getAuthToken();
   const res = await fetch(`${API_BASE}/api/media/extract-exif`, {
     method: "POST",
     body: formData,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 
   if (!res.ok) {
@@ -216,11 +243,14 @@ export async function getGlobalPaths(): Promise<GeoJSONFeatureCollection> {
 // ── Utility ─────────────────────────────────────────────────
 
 export function getMediaUrl(filePath: string): string {
+  // Cloudinary URLs come back as full https:// URLs
+  if (filePath?.startsWith("http")) return filePath;
   return `${API_BASE}/api/uploads/${filePath}`;
 }
 
 export function getThumbnailUrl(thumbnailPath: string | null, filePath: string): string {
   if (thumbnailPath) {
+    if (thumbnailPath.startsWith("http")) return thumbnailPath;
     return `${API_BASE}/api/uploads/thumbnails/${thumbnailPath}`;
   }
   return getMediaUrl(filePath);

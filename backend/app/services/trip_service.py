@@ -13,22 +13,23 @@ from app.models.stop import Stop
 from app.models.media import Media
 
 
-async def create_trip(db: AsyncSession, **kwargs) -> Trip:
-    trip = Trip(**kwargs)
+async def create_trip(db: AsyncSession, user_id: str, **kwargs) -> Trip:
+    trip = Trip(user_id=user_id, **kwargs)
     db.add(trip)
     await db.flush()
     await db.refresh(trip)
     return trip
 
 
-async def get_trips(db: AsyncSession) -> List[dict]:
-    """Get all trips with stop and media counts."""
+async def get_trips(db: AsyncSession, user_id: str) -> List[dict]:
+    """Get all trips for a specific user with stop and media counts."""
     stmt = (
         select(
             Trip,
             func.count(Stop.id.distinct()).label("stop_count"),
             func.count(Media.id.distinct()).label("media_count"),
         )
+        .where(Trip.user_id == user_id)
         .outerjoin(Stop, Stop.trip_id == Trip.id)
         .outerjoin(Media, Media.trip_id == Trip.id)
         .group_by(Trip.id)
