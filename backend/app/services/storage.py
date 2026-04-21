@@ -80,27 +80,16 @@ class ThumbnailStorage(LocalStorage):
 class CloudinaryStorage(StorageBackend):
     """
     Cloudinary storage backend.
-    Activated automatically when CLOUDINARY_URL (or the three individual
-    CLOUDINARY_* env vars) are set.
+    The Cloudinary SDK auto-reads CLOUDINARY_URL from os.environ on import.
+    No manual config call needed.
     """
 
     def __init__(self, folder: str = "wandersync"):
-        import cloudinary
+        import cloudinary  # noqa — triggers auto-config from CLOUDINARY_URL env var
         import cloudinary.uploader
-
         self.folder = folder
         self._uploader = cloudinary.uploader
-
-        # Configure Cloudinary from either the URL or individual fields
-        if settings.cloudinary_url:
-            cloudinary.config(cloudinary_url=settings.cloudinary_url)
-        else:
-            cloudinary.config(
-                cloud_name=settings.cloudinary_cloud_name,
-                api_key=settings.cloudinary_api_key,
-                api_secret=settings.cloudinary_api_secret,
-                secure=True,
-            )
+        print(f"INFO: CloudinaryStorage initialised (folder={folder})")
 
     async def save(self, file_bytes: bytes, filename: str, subdir: str = "") -> str:
         """Upload to Cloudinary. Returns the public_id (used as our 'path')."""
@@ -159,14 +148,23 @@ class CloudinaryThumbnailStorage(CloudinaryStorage):
 
 def _make_storage() -> StorageBackend:
     if settings.use_cloudinary:
-        print("INFO: Using Cloudinary for file storage.")
-        return CloudinaryStorage()
+        try:
+            backend = CloudinaryStorage()
+            print("INFO: ✅ Using Cloudinary for media storage.")
+            return backend
+        except Exception as e:
+            print(f"WARNING: Cloudinary init failed ({e}). Falling back to LocalStorage.")
+    else:
+        print("INFO: ⚠️ CLOUDINARY_URL not set — using local filesystem storage (files will be lost on restart).")
     return LocalStorage()
 
 
 def _make_thumbnail_storage() -> StorageBackend:
     if settings.use_cloudinary:
-        return CloudinaryThumbnailStorage()
+        try:
+            return CloudinaryThumbnailStorage()
+        except Exception:
+            return ThumbnailStorage()
     return ThumbnailStorage()
 
 

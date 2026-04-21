@@ -24,20 +24,21 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     max_upload_size: int = 50 * 1024 * 1024  # 50MB
 
-    # ── Cloudinary (optional — enables cloud storage when set) ───────────────
-    # Set CLOUDINARY_URL=cloudinary://api_key:api_secret@cloud_name in Render,
-    # OR set the three individual fields below.
-    cloudinary_url: str = ""           # e.g. cloudinary://key:secret@cloud_name
-    cloudinary_cloud_name: str = ""
-    cloudinary_api_key: str = ""
-    cloudinary_api_secret: str = ""
-
+    # ── Cloudinary ─────────────────────────────────────────────────────────────
+    # NOTE: We deliberately do NOT parse CLOUDINARY_URL via Pydantic because
+    # the `cloudinary://` scheme trips up some URL validators. Instead, we read
+    # os.environ directly and let the Cloudinary SDK self-configure.
     @property
     def use_cloudinary(self) -> bool:
-        """True when Cloudinary credentials are configured."""
+        """True when Cloudinary credentials are available in the environment."""
+        import os
         return bool(
-            self.cloudinary_url
-            or (self.cloudinary_cloud_name and self.cloudinary_api_key and self.cloudinary_api_secret)
+            os.environ.get("CLOUDINARY_URL")
+            or (
+                os.environ.get("CLOUDINARY_CLOUD_NAME")
+                and os.environ.get("CLOUDINARY_API_KEY")
+                and os.environ.get("CLOUDINARY_API_SECRET")
+            )
         )
 
     @property

@@ -19,6 +19,7 @@ export default function HomeMap() {
   const [globalPaths, setGlobalPaths] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [isGlobeView, setIsGlobeView] = useState(true);
 
   useEffect(() => {
     async function load() {
@@ -43,13 +44,26 @@ export default function HomeMap() {
       {/* Absolute Header Overlay */}
       <div className="absolute top-6 left-6 z-10 p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl max-w-sm">
         <h1 className="text-2xl font-bold text-[var(--color-text)] m-0">
-          WorldMap
+          WanderSync
         </h1>
         <p className="text-[var(--color-text-secondary)] mt-1 text-xs">
           Your global travel footprint
         </p>
 
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex items-center gap-2 flex-wrap">
+          {/* Globe / Flat Map toggle */}
+          <button
+            onClick={() => setIsGlobeView(!isGlobeView)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              isGlobeView
+                ? "bg-teal-500/15 text-teal-400 border border-teal-500/20"
+                : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
+            }`}
+          >
+            {isGlobeView ? "🌍 Globe" : "🗺️ Flat Map"}
+          </button>
+
+          {/* Heatmap toggle */}
           <button
             onClick={() => setShowHeatmap(!showHeatmap)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
@@ -58,8 +72,9 @@ export default function HomeMap() {
                 : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
             }`}
           >
-            {showHeatmap ? "Heatmap On" : "Heatmap Off"}
+            {showHeatmap ? "🔥 Heatmap On" : "Heatmap Off"}
           </button>
+
           <span className="text-xs text-[var(--color-text-secondary)] opacity-60">
             {globalPaths?.features?.length || 0} Trips
           </span>
@@ -80,7 +95,7 @@ export default function HomeMap() {
           heatmapData={heatmapData}
           showHeatmap={showHeatmap}
           globalPaths={globalPaths}
-          spinGlobe={true}
+          spinGlobe={isGlobeView}
         />
       </div>
     </div>
