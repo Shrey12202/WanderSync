@@ -136,11 +136,15 @@ export default function MapView({
         setTimeout(() => { isInteractingRef.current = false; }, 2000);
       };
 
+      // Map events catch interaction ON the map
       map.on("mousedown", stopSpin);
       map.on("touchstart", stopSpin);
       map.on("mouseup", resumeSpin);
       map.on("touchend", resumeSpin);
       map.on("dragend", resumeSpin);
+      // Document-level events catch mouseup/touchend ANYWHERE (e.g. releasing drag outside map)
+      document.addEventListener("mouseup", resumeSpin);
+      document.addEventListener("touchend", resumeSpin);
 
       spinAnimRef.current = requestAnimationFrame(spin);
     }

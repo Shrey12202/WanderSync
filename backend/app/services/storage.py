@@ -113,26 +113,35 @@ class CloudinaryStorage(StorageBackend):
                 overwrite=False,
             )
         )
-        # Return the public_id — we reconstruct the URL via get_url()
-        return result["public_id"]
+        # Store the full secure URL so the frontend can use it directly
+        return result["secure_url"]
 
     async def delete(self, file_path: str) -> bool:
-        """Delete from Cloudinary by public_id."""
-        import asyncio
+        """Delete from Cloudinary. Accepts either a public_id or a full secure URL."""
+        import asyncio, re
         from functools import partial
+
+        # If it's a full URL, extract the public_id
+        if file_path.startswith("http"):
+            match = re.search(r'/upload/(?:v\d+/)?(.+?)(?:\.[^./]+)?$', file_path)
+            public_id = match.group(1) if match else file_path
+        else:
+            public_id = file_path
 
         try:
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,
-                partial(self._uploader.destroy, file_path)
+                partial(self._uploader.destroy, public_id)
             )
             return result.get("result") == "ok"
         except Exception:
             return False
 
     def get_url(self, file_path: str) -> str:
-        """Return a Cloudinary CDN URL for the given public_id."""
+        """Return a Cloudinary CDN URL. Pass-through if already a full URL."""
+        if file_path.startswith("http"):
+            return file_path
         import cloudinary
         return cloudinary.CloudinaryImage(file_path).build_url(secure=True)
 

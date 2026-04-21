@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserButton, useUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 
 const NAV_ITEMS = [
   { href: "/", label: "Map", icon: "🗺️" },
   { href: "/trips", label: "Dashboard", icon: "✈️" },
   { href: "/photos", label: "Photos", icon: "📷" },
   { href: "/upload", label: "Upload", icon: "📤" },
-  { href: "/exif-viewer", label: "Photo Meta", icon: "🔍" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
+
+  const username = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Traveller";
+  const initials = username[0]?.toUpperCase() ?? "T";
 
   return (
     <aside className="w-[280px] h-screen flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -52,25 +54,38 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* User Profile Footer */}
+      {/* User Profile Footer — click to go to /profile */}
       <div className="p-4 border-t border-[var(--color-border)]">
-        <div className="glass rounded-xl p-3 flex items-center gap-3">
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: "w-9 h-9",
-              },
-            }}
-          />
+        <Link
+          href="/profile"
+          className={`flex items-center gap-3 p-3 rounded-xl no-underline transition-all group ${
+            pathname === "/profile"
+              ? "bg-amber-500/10 border border-amber-500/20"
+              : "hover:bg-[var(--color-surface-hover)] border border-transparent"
+          }`}
+        >
+          {/* Avatar */}
+          {user?.imageUrl ? (
+            <img
+              src={user.imageUrl}
+              alt="Profile"
+              className="w-9 h-9 rounded-xl object-cover border-2 border-amber-500/30 flex-shrink-0"
+            />
+          ) : (
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-teal-500 flex items-center justify-center text-sm font-bold text-[#0a0e1a] flex-shrink-0">
+              {initials}
+            </div>
+          )}
+
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-[var(--color-text)] m-0 truncate">
-              {user?.fullName || user?.primaryEmailAddress?.emailAddress || "Traveller"}
+              {username}
             </p>
-            <p className="text-xs text-[var(--color-text-secondary)] m-0 opacity-60">
-              Personal Journal
+            <p className="text-xs text-[var(--color-text-secondary)] m-0 opacity-60 group-hover:opacity-100 transition-opacity">
+              View Profile →
             </p>
           </div>
-        </div>
+        </Link>
       </div>
     </aside>
   );
