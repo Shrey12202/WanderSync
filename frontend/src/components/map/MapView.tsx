@@ -120,7 +120,7 @@ export default function MapView({
 
     // ── Auto-spin globe ────────────────────────────────────────────────────
     if (spinGlobe) {
-      const SPEED = 0.012; // degrees per frame
+      const SPEED = 0.12; // degrees per frame
 
       const spin = () => {
         if (!isInteractingRef.current && mapRef.current) {
@@ -280,8 +280,8 @@ export default function MapView({
       const stopName = props.name || `Stop ${displayNumber}`;
       const arrivalStr = props.arrival_time
         ? new Date(props.arrival_time as string).toLocaleDateString("en-US", {
-            month: "short", day: "numeric", year: "numeric",
-          })
+          month: "short", day: "numeric", year: "numeric",
+        })
         : null;
 
       const nearbyThumbs: string[] = [];
@@ -306,10 +306,10 @@ export default function MapView({
         ${nearbyThumbs.length > 0
           ? `<div style="display:flex;gap:4px;margin-top:4px;">
                ${nearbyThumbs.map(url =>
-                 `<div style="width:44px;height:44px;border-radius:5px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);flex-shrink:0;">
+            `<div style="width:44px;height:44px;border-radius:5px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);flex-shrink:0;">
                     <img src="${url}" style="width:100%;height:100%;object-fit:cover;" />
                   </div>`
-               ).join("")}
+          ).join("")}
              </div>`
           : `<div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;">Click to view stop</div>`
         }
