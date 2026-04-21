@@ -20,9 +20,15 @@ _JWKS_CACHE: Optional[dict] = None
 
 def _get_jwks_url() -> str:
     """Build the Clerk JWKS URL from the issuer env var."""
-    issuer = os.environ.get("CLERK_ISSUER_URL", "")
+    raw = os.environ.get("CLERK_ISSUER_URL", "")
+    # Aggressively strip: remove ALL non-printable / non-ASCII characters.
+    # This handles zero-width spaces, BOM (\ufeff), newlines, etc. from copy-paste.
+    issuer = raw.encode("ascii", errors="ignore").decode("ascii").strip()
     if not issuer:
-        raise RuntimeError("CLERK_ISSUER_URL environment variable is not set.")
+        raise RuntimeError(
+            "CLERK_ISSUER_URL environment variable is not set or contains only invalid characters. "
+            f"Raw value repr: {repr(raw)}"
+        )
     return f"{issuer.rstrip('/')}/.well-known/jwks.json"
 
 
