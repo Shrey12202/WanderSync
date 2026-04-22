@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Map", icon: "🗺️" },
   { href: "/trips", label: "Dashboard", icon: "✈️" },
   { href: "/photos", label: "Media", icon: "📷" },
+  { href: "/memories", label: "Memory Wall", icon: "🌍" },
   { href: "/upload", label: "Upload", icon: "📤" },
 ];
 

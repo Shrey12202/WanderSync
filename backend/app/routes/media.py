@@ -27,21 +27,51 @@ async def get_all_media(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Get all media for the authenticated user across all trips + standalone uploads.
-    Ordered by taken_at descending (newest first).
-    """
+    """Get all media for the authenticated user — trip-linked + standalone."""
     stmt = (
         select(Media, Trip.title.label("trip_title"), Stop.name.label("stop_name"))
         .outerjoin(Trip, Media.trip_id == Trip.id)
         .outerjoin(Stop, Media.stop_id == Stop.id)
         .where(
             or_(
-                Trip.user_id == user_id,          # media attached to user's trips
-                Media.user_id == user_id,          # standalone uploads
+                Trip.user_id == user_id,
+                Media.user_id == user_id,
             )
         )
         .order_by(Media.taken_at.desc().nullslast(), Media.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    items = []
+    for media, trip_title, stop_name in rows:
+        item = MediaWithContext.model_validate(media)
+        item.trip_title = trip_title or "Standalone"
+        item.stop_name = stop_name
+        items.append(item)
+    return items
+
+
+@router.get("/geotagged", response_model=List[MediaWithContext])
+async def get_geotagged_media(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    All geotagged media (has lat+lng) for the authenticated user.
+    Used by the Memory Wall map to place images at their GPS locations.
+    """
+    stmt = (
+        select(Media, Trip.title.label("trip_title"), Stop.name.label("stop_name"))
+        .outerjoin(Trip, Media.trip_id == Trip.id)
+        .outerjoin(Stop, Media.stop_id == Stop.id)
+        .where(
+            or_(Trip.user_id == user_id, Media.user_id == user_id),
+            Media.latitude.isnot(None),
+            Media.longitude.isnot(None),
+            Media.file_type == "image",
+        )
+        .order_by(Media.taken_at.desc().nullslast())
     )
     result = await db.execute(stmt)
     rows = result.all()

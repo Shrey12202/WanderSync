@@ -1,16 +1,22 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { getAllMedia, getMediaUrl, getThumbnailUrl } from "@/lib/api";
 import type { MediaWithContext } from "@/types";
 
 export default function PhotosPage() {
+  const { isLoaded, isSignedIn } = useAuth();
   const [media, setMedia] = useState<MediaWithContext[]>([]);
   const [loading, setLoading] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [filter, setFilter] = useState<"all" | "image" | "video">("all");
 
   useEffect(() => {
+    // Wait until Clerk has loaded AND confirmed the user is signed in
+    // so the auth token is guaranteed to be in the module-level cache
+    if (!isLoaded || !isSignedIn) return;
+
     async function load() {
       try {
         const data = await getAllMedia();
@@ -22,7 +28,7 @@ export default function PhotosPage() {
       }
     }
     load();
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   const filtered = filter === "all" ? media : media.filter((m) => m.file_type === filter);
 

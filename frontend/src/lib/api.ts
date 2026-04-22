@@ -221,6 +221,10 @@ export async function getAllMedia(): Promise<MediaWithContext[]> {
   return request<MediaWithContext[]>("/api/media/all");
 }
 
+export async function getGeotaggedMedia(): Promise<MediaWithContext[]> {
+  return request<MediaWithContext[]>("/api/media/geotagged");
+}
+
 // ── Map Data ────────────────────────────────────────────────
 
 export async function getMapData(tripId: string): Promise<MapData> {

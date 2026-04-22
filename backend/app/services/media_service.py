@@ -94,7 +94,11 @@ async def process_upload(
 
     thumbnail_path = None
     if file_type == "image":
-        thumbnail_path = await generate_thumbnail(file_bytes, filename)
+        if file_path.startswith("http"):
+            # Cloudinary: generate thumbnail via URL transformation — no extra upload
+            thumbnail_path = file_path.replace("/upload/", "/upload/c_thumb,w_400,h_400/")
+        else:
+            thumbnail_path = await generate_thumbnail(file_bytes, filename)
 
     media = Media(
         trip_id=trip_id,

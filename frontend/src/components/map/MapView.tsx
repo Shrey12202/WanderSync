@@ -120,10 +120,15 @@ export default function MapView({
 
     // ── Auto-spin globe ────────────────────────────────────────────────────
     if (spinGlobe) {
-      const SPEED = 0.12; // degrees per frame
+      const SPEED = 0.12;
+      const BASE_ZOOM = 1.5;          // the zoom the map starts at
+      const ZOOM_THRESHOLD = 0.3;     // any zoom-in beyond this stops spin
+
+      const isZoomedIn = () =>
+        (mapRef.current?.getZoom() ?? BASE_ZOOM) > BASE_ZOOM + ZOOM_THRESHOLD;
 
       const spin = () => {
-        if (!isInteractingRef.current && mapRef.current) {
+        if (!isInteractingRef.current && !isZoomedIn() && mapRef.current) {
           const center = mapRef.current.getCenter();
           center.lng -= SPEED;
           mapRef.current.setCenter(center);
@@ -132,21 +137,19 @@ export default function MapView({
       };
 
       const stopSpin = () => { isInteractingRef.current = true; };
-      const resumeSpin = () => {
+      // Resume after drag/touch — but zoom-in check in loop still blocks if zoomed
+      const resumeAfterDrag = () => {
         setTimeout(() => { isInteractingRef.current = false; }, 2000);
       };
 
-      // Map events catch interaction ON the map
       map.on("mousedown", stopSpin);
       map.on("touchstart", stopSpin);
-      map.on("zoomstart", stopSpin);   // catches scroll-wheel zoom
-      map.on("mouseup", resumeSpin);
-      map.on("touchend", resumeSpin);
-      map.on("dragend", resumeSpin);
-      map.on("zoomend", resumeSpin);   // resume after zoom finishes
-      // Document-level: resume when mouse released anywhere outside map
-      document.addEventListener("mouseup", resumeSpin);
-      document.addEventListener("touchend", resumeSpin);
+      // zoomstart/zoomend: don't use timer — isZoomedIn() in the loop handles it
+      map.on("mouseup", resumeAfterDrag);
+      map.on("touchend", resumeAfterDrag);
+      map.on("dragend", resumeAfterDrag);
+      document.addEventListener("mouseup", resumeAfterDrag);
+      document.addEventListener("touchend", resumeAfterDrag);
 
       spinAnimRef.current = requestAnimationFrame(spin);
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { getTrips, extractExif } from "@/lib/api";
 import type { TripSummary, ExifData } from "@/types";
 import UploadHandler from "@/components/media/UploadHandler";
@@ -8,8 +9,10 @@ import UploadHandler from "@/components/media/UploadHandler";
 type Tab = "upload" | "exif";
 
 export default function UploadPage() {
+  const { isLoaded, isSignedIn } = useAuth();
   const [trips, setTrips] = useState<TripSummary[]>([]);
-  const [selectedTripId, setSelectedTripId] = useState<string>("");
+  // "__standalone__" means no trip (memory wall)
+  const [selectedTripId, setSelectedTripId] = useState<string>("__standalone__");
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("upload");
 
@@ -20,14 +23,16 @@ export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
     getTrips()
       .then((data) => {
         setTrips(data);
+        // Default to first trip if any exist
         if (data.length > 0) setSelectedTripId(data[0].id);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   const handleExifFile = async (file: File) => {
     setExifLoading(true);
@@ -86,18 +91,17 @@ export default function UploadPage() {
           {/* Trip selector */}
           <div className="glass rounded-2xl p-6 mb-6 border border-[var(--color-border)]">
             <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-              Select Trip
+              Attach to Trip <span className="text-xs opacity-60">(optional)</span>
             </label>
             {loading ? (
               <div className="h-10 rounded-xl bg-[var(--color-bg)] animate-pulse" />
-            ) : trips.length === 0 ? (
-              <p className="text-sm text-[var(--color-text-secondary)]">No trips found. Create a trip first.</p>
             ) : (
               <select
                 className="w-full px-4 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:border-amber-500/50 transition-all"
                 value={selectedTripId}
                 onChange={(e) => setSelectedTripId(e.target.value)}
               >
+                <option value="__standalone__">📌 No trip — standalone memory</option>
                 {trips.map((trip) => (
                   <option key={trip.id} value={trip.id}>{trip.title}</option>
                 ))}
@@ -105,14 +109,12 @@ export default function UploadPage() {
             )}
           </div>
 
-          {selectedTripId && (
-            <div className="glass rounded-2xl p-6 border border-[var(--color-border)]">
-              <UploadHandler
-                tripId={selectedTripId}
-                onUploadComplete={(media) => console.log("Uploaded:", media)}
-              />
-            </div>
-          )}
+          <div className="glass rounded-2xl p-6 border border-[var(--color-border)]">
+            <UploadHandler
+              tripId={selectedTripId === "__standalone__" ? undefined : selectedTripId}
+              onUploadComplete={(media) => console.log("Uploaded:", media)}
+            />
+          </div>
         </>
       )}
 
