@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, use } from "react";
+import { useRouter } from "next/navigation";
 import { getTrip, getMapData, createDay, createStop, getTripMedia } from "@/lib/api";
 import type { TripDetail, MapData, Stop, MediaItem } from "@/types";
 import dynamic from "next/dynamic";
@@ -22,6 +23,7 @@ const MapView = dynamic(() => import("@/components/map/MapView"), {
 
 export default function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
+  const router = useRouter();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -345,6 +347,17 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                 </button>
               </form>
             )}
+          </div>
+
+          {/* ── Finish Trip footer — visible on all tabs ── */}
+          <div className="shrink-0 p-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
+            <button
+              onClick={() => router.push("/")}
+              className="w-full py-3 rounded-2xl font-bold text-sm transition-all bg-gradient-to-r from-amber-500 to-teal-500 text-[#0a0e1a] hover:from-amber-400 hover:to-teal-400 shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+            >
+              <span>✓</span>
+              Finish &amp; View on Map
+            </button>
           </div>
         </div>
       </div>

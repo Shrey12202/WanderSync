@@ -28,16 +28,13 @@ async def generate_thumbnail(file_bytes: bytes, original_filename: str) -> Optio
         image = Image.open(io.BytesIO(file_bytes))
         image.thumbnail(THUMB_MAX_SIZE, Image.Resampling.LANCZOS)
 
-        # Convert to RGB if necessary (e.g., RGBA PNGs)
         if image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
 
-        # Save thumbnail to bytes
         thumb_buffer = io.BytesIO()
         image.save(thumb_buffer, format="JPEG", quality=THUMB_QUALITY)
         thumb_bytes = thumb_buffer.getvalue()
 
-        # Save using thumbnail storage
         thumb_path = await thumbnail_storage.save(thumb_bytes, original_filename)
         return thumb_path
     except Exception:
@@ -50,20 +47,21 @@ def detect_file_type(mime_type: str) -> str:
         return "image"
     elif mime_type and mime_type.startswith("video/"):
         return "video"
-    return "image"  # Default to image
+    return "image"
 
 
 async def process_upload(
     file_bytes: bytes,
     filename: str,
     mime_type: str,
-    trip_id: UUID,
+    trip_id: Optional[UUID],          # None for standalone/memory-wall uploads
     stop_id: Optional[UUID],
     caption: Optional[str],
     override_lat: Optional[float],
     override_lng: Optional[float],
     override_date: Optional[datetime],
     db: AsyncSession,
+    user_id: Optional[str] = None,    # Caller's Clerk user_id
 ) -> Media:
     """
     Full upload pipeline:
@@ -74,10 +72,10 @@ async def process_upload(
     """
     file_type = detect_file_type(mime_type)
 
-    # 1. Save the original file
-    file_path = await storage.save(file_bytes, filename, subdir=str(trip_id))
+    # Use trip_id as subdirectory when available, else 'standalone'
+    subdir = str(trip_id) if trip_id else "standalone"
+    file_path = await storage.save(file_bytes, filename, subdir=subdir)
 
-    # 2. Extract EXIF from images
     exif_data = None
     latitude = override_lat
     longitude = override_lng
@@ -86,7 +84,6 @@ async def process_upload(
     if file_type == "image":
         exif_result = extract_exif(file_bytes)
 
-        # Use EXIF GPS if no override provided
         if latitude is None and exif_result.has_gps:
             latitude = exif_result.latitude
         if longitude is None and exif_result.has_gps:
@@ -95,15 +92,14 @@ async def process_upload(
         taken_at = override_date if override_date else exif_result.taken_at
         exif_data = get_raw_exif_dict(file_bytes)
 
-    # 3. Generate thumbnail for images
     thumbnail_path = None
     if file_type == "image":
         thumbnail_path = await generate_thumbnail(file_bytes, filename)
 
-    # 4. Create database record
     media = Media(
         trip_id=trip_id,
         stop_id=stop_id,
+        user_id=user_id,
         file_path=file_path,
         file_name=filename,
         file_type=file_type,

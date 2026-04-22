@@ -163,7 +163,7 @@ export async function uploadMedia(
 ): Promise<MediaItem> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("trip_id", tripId);
+  if (tripId) formData.append("trip_id", tripId);   // optional — standalone allowed
   if (stopId) formData.append("stop_id", stopId);
   if (caption) formData.append("caption", caption);
   if (latitude !== undefined) formData.append("latitude", String(latitude));

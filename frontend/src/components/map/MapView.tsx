@@ -139,10 +139,12 @@ export default function MapView({
       // Map events catch interaction ON the map
       map.on("mousedown", stopSpin);
       map.on("touchstart", stopSpin);
+      map.on("zoomstart", stopSpin);   // catches scroll-wheel zoom
       map.on("mouseup", resumeSpin);
       map.on("touchend", resumeSpin);
       map.on("dragend", resumeSpin);
-      // Document-level events catch mouseup/touchend ANYWHERE (e.g. releasing drag outside map)
+      map.on("zoomend", resumeSpin);   // resume after zoom finishes
+      // Document-level: resume when mouse released anywhere outside map
       document.addEventListener("mouseup", resumeSpin);
       document.addEventListener("touchend", resumeSpin);
 

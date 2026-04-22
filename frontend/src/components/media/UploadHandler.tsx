@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { uploadMedia, extractExif, getTrip } from "@/lib/api";
 import type { ExifData, MediaItem, Stop } from "@/types";
 
 interface UploadHandlerProps {
-  tripId: string;
+  tripId?: string;                // Optional — standalone uploads allowed
   stopId?: string;
   defaultLat?: number;
   defaultLng?: number;
@@ -18,25 +18,25 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
   const [exif, setExif] = useState<ExifData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // All stops for this trip (used for the stop picker)
+  // All stops for this trip (for the stop picker)
   const [tripStops, setTripStops] = useState<Stop[]>([]);
   const [selectedExistingStopId, setSelectedExistingStopId] = useState<string>("");
 
-  // Confirmation form state — always shown before upload
+  // Confirmation form state
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [overrideLat, setOverrideLat] = useState<string>("");
   const [overrideLng, setOverrideLng] = useState<string>("");
   const [overrideDate, setOverrideDate] = useState<string>("");
 
-  // Fetch trip stops so user can pick an existing stop for location
+  // Prevents geocoding from re-firing immediately after a suggestion is selected
+  const skipGeocodingRef = useRef(false);
+
+  // Fetch trip stops
   useEffect(() => {
     if (!tripId) return;
     getTrip(tripId)
-      .then((trip) => {
-        const allStops = trip.days.flatMap((d) => d.stops);
-        setTripStops(allStops);
-      })
+      .then((trip) => setTripStops(trip.days.flatMap((d) => d.stops)))
       .catch(() => setTripStops([]));
   }, [tripId]);
 
@@ -45,27 +45,36 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
     if (!selectedExistingStopId) return;
     const stop = tripStops.find((s) => s.id === selectedExistingStopId);
     if (stop?.latitude != null && stop?.longitude != null) {
+      skipGeocodingRef.current = true;
       setOverrideLat(String(stop.latitude));
       setOverrideLng(String(stop.longitude));
       setSearchQuery(stop.name || "");
+      setSuggestions([]);
     }
   }, [selectedExistingStopId, tripStops]);
 
-  // Geocoding
+  // Geocoding — CITY/POI level only (types=place,locality,poi,address)
+  // Skipped for one cycle after a suggestion or stop is selected
   useEffect(() => {
+    if (skipGeocodingRef.current) {
+      skipGeocodingRef.current = false;
+      return;
+    }
     if (searchQuery.length > 2) {
       const fetchPlaces = async () => {
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&access_token=${token}`);
+          const res = await fetch(
+            `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&types=place,locality,poi,address&access_token=${token}`
+          );
           const data = await res.json();
           if (data.features) setSuggestions(data.features);
         } catch (e) {
           console.error("Geocoding error:", e);
         }
       };
-      const timeoutId = setTimeout(fetchPlaces, 500);
-      return () => clearTimeout(timeoutId);
+      const id = setTimeout(fetchPlaces, 500);
+      return () => clearTimeout(id);
     } else {
       setSuggestions([]);
     }
@@ -80,7 +89,6 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       const data = await extractExif(selectedFile);
       setExif(data);
 
-      // Pre-fill with EXIF data if available, otherwise use stop defaults
       const lat = data.has_gps && data.latitude != null ? String(data.latitude) : (defaultLat !== undefined ? String(defaultLat) : "");
       const lng = data.has_gps && data.longitude != null ? String(data.longitude) : (defaultLng !== undefined ? String(defaultLng) : "");
       const date = data.taken_at ? new Date(data.taken_at).toISOString().split("T")[0] : "";
@@ -88,21 +96,19 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       setOverrideLat(lat);
       setOverrideLng(lng);
       setOverrideDate(date);
+
       if (lat && lng) {
-        // Reverse geocode to populate the search query for display
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
           const res = await fetch(`https://api.mapbox.com/search/geocode/v6/reverse?longitude=${lng}&latitude=${lat}&access_token=${token}`);
           const geoData = await res.json();
-          if (geoData.features && geoData.features.length > 0) {
+          if (geoData.features?.length > 0) {
+            skipGeocodingRef.current = true;
             setSearchQuery(geoData.features[0].properties.place_formatted || geoData.features[0].properties.full_address || "");
           }
-        } catch {
-          // Ignore reverse geocode errors — user can type manually
-        }
+        } catch { /* ignore */ }
       }
 
-      // Always go to the confirm step so user can verify/override
       setStep("confirm");
     } catch (err: any) {
       setError(err.message || "Failed to analyze photo");
@@ -112,21 +118,30 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
 
   const handleConfirmUpload = async () => {
     if (!file) return;
+
+    // ── Validation: location + date are required ──────────────────────────────
+    const parsedLat = overrideLat ? parseFloat(overrideLat) : defaultLat;
+    const parsedLng = overrideLng ? parseFloat(overrideLng) : defaultLng;
+
+    if (parsedLat == null || parsedLng == null || isNaN(parsedLat) || isNaN(parsedLng)) {
+      setError("📍 Location is required. Search for a city or place above.");
+      return;
+    }
+    if (!overrideDate) {
+      setError("📅 Date is required. Enter when this photo was taken.");
+      return;
+    }
+
     setStep("uploading");
     try {
-      const parsedLat = overrideLat ? parseFloat(overrideLat) : defaultLat;
-      const parsedLng = overrideLng ? parseFloat(overrideLng) : defaultLng;
-      const parsedDate = overrideDate ? new Date(overrideDate).toISOString() : undefined;
+      const parsedDate = new Date(overrideDate).toISOString();
 
       const media = await uploadMedia(file, tripId, stopId, undefined, parsedLat, parsedLng, parsedDate);
 
       setStep("idle");
       setFile(null);
-      setOverrideLat("");
-      setOverrideLng("");
-      setOverrideDate("");
-      setSearchQuery("");
-      setSelectedExistingStopId("");
+      setOverrideLat(""); setOverrideLng(""); setOverrideDate("");
+      setSearchQuery(""); setSelectedExistingStopId("");
       onUploadComplete(media);
     } catch (err: any) {
       setError(err.message || "Failed to upload");
@@ -135,37 +150,21 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
   };
 
   const handleCancel = () => {
-    setStep("idle");
-    setFile(null);
-    setOverrideLat("");
-    setOverrideLng("");
-    setOverrideDate("");
-    setSearchQuery("");
-    setSuggestions([]);
-    setError(null);
-    setExif(null);
-    setSelectedExistingStopId("");
+    setStep("idle"); setFile(null);
+    setOverrideLat(""); setOverrideLng(""); setOverrideDate("");
+    setSearchQuery(""); setSuggestions([]); setError(null);
+    setExif(null); setSelectedExistingStopId("");
   };
 
   const onDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
   }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     if (step !== "idle") return;
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files?.[0]) processFile(e.dataTransfer.files[0]);
   }, [step]);
-
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
-  };
 
   const inputClass = "w-full px-4 py-2.5 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-sm text-[var(--color-text)] focus:border-amber-500/50 outline-none transition-all placeholder:text-[var(--color-text-secondary)]/50";
 
@@ -183,38 +182,62 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
   if (step === "confirm") {
     const hasExifGps = exif?.has_gps;
     const hasExifDate = !!exif?.taken_at;
+    const hasLat = overrideLat !== "" && !isNaN(parseFloat(overrideLat));
+    const hasLng = overrideLng !== "" && !isNaN(parseFloat(overrideLng));
+
+    // Compute which required fields are still missing
+    const missingFields: string[] = [];
+    if (!hasLat || !hasLng) missingFields.push("📍 Location (lat/lng)");
+    if (!overrideDate) missingFields.push("📅 Date Taken");
 
     return (
       <div className="border border-amber-500/30 bg-amber-500/5 rounded-2xl p-5 animate-fade-in shadow-xl shadow-amber-500/10 space-y-4">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-xl shrink-0">
-            📋
-          </div>
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-xl shrink-0">📋</div>
           <div>
             <h3 className="text-[var(--color-text)] font-bold m-0 text-sm">Confirm Photo Details</h3>
             <p className="text-[var(--color-text-secondary)] text-xs m-0 mt-0.5">
-              {file?.name} • Verify or update location and date before uploading
+              {file?.name} • Location and date required before uploading
             </p>
           </div>
         </div>
 
-        {/* EXIF status badges */}
+        {/* ── Required fields banner — shown proactively when fields are missing ── */}
+        {missingFields.length > 0 && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex gap-2.5 items-start">
+            <span className="text-red-400 text-base shrink-0 mt-0.5">⚠</span>
+            <div>
+              <p className="text-red-400 font-semibold text-xs m-0 mb-1">Required fields missing:</p>
+              <ul className="m-0 p-0 list-none space-y-0.5">
+                {missingFields.map((f) => (
+                  <li key={f} className="text-red-400/80 text-xs">{f}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* EXIF badges */}
         <div className="flex gap-2 flex-wrap">
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${hasExifGps ? "bg-teal-500/10 text-teal-400 border-teal-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}>
-            {hasExifGps ? "✓ GPS from photo" : "⚠ No GPS in photo"}
+            {hasExifGps ? "✓ GPS from photo" : "⚠ No GPS — enter manually"}
           </span>
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${hasExifDate ? "bg-teal-500/10 text-teal-400 border-teal-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}>
-            {hasExifDate ? "✓ Date from photo" : "⚠ No date in photo"}
+            {hasExifDate ? "✓ Date from photo" : "⚠ No date — enter manually"}
           </span>
         </div>
+
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
 
         {/* Existing stop picker */}
         {tripStops.length > 0 && (
           <div>
-            <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
-              📌 Use existing stop
-            </label>
+            <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">📌 Use existing stop</label>
             <select
               className={inputClass}
               value={selectedExistingStopId}
@@ -222,9 +245,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
             >
               <option value="">— Search / enter location manually —</option>
               {tripStops.map((stop) => (
-                <option key={stop.id} value={stop.id}>
-                  {stop.name}
-                </option>
+                <option key={stop.id} value={stop.id}>{stop.name}</option>
               ))}
             </select>
           </div>
@@ -233,23 +254,30 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
         {/* Location search */}
         <div className="relative">
           <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
-            📍 Location {selectedExistingStopId ? "(auto-filled from stop)" : ""}
+            📍 Location <span className="text-red-400">*</span>{selectedExistingStopId ? " (auto-filled)" : ""}
           </label>
           <input
             type="text"
-            className={inputClass}
-            placeholder="Search a place or enter coordinates below..."
+            className={`${inputClass} ${!hasLat || !hasLng ? "border-amber-500/40" : "border-teal-500/40"}`}
+            placeholder="Search city, landmark, or address..."
             value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setSelectedExistingStopId(""); }}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSelectedExistingStopId("");
+              // Don't set skipGeocodingRef here — we WANT to search
+            }}
           />
           {suggestions.length > 0 && (
-            <ul className="absolute z-20 w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl max-h-44 overflow-y-auto shadow-2xl custom-scrollbar">
+            <ul className="absolute z-20 w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl max-h-44 overflow-y-auto shadow-2xl">
               {suggestions.map((feature, i) => (
                 <li
                   key={i}
                   className="px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                  onClick={() => {
-                    setSearchQuery(feature.properties.name || feature.properties.place_formatted || feature.properties.full_address);
+                  onMouseDown={(e) => {
+                    // Use onMouseDown (not onClick) to fire before input blur
+                    e.preventDefault();
+                    skipGeocodingRef.current = true;
+                    setSearchQuery(feature.properties.name || feature.properties.full_address);
                     setOverrideLng(String(feature.geometry.coordinates[0]));
                     setOverrideLat(String(feature.geometry.coordinates[1]));
                     setSuggestions([]);
@@ -265,61 +293,45 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
           )}
         </div>
 
-        {/* Lat/Lng row */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* Coordinates (read-only display) */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">Latitude</label>
-            <input
-              type="number"
-              step="any"
-              className={inputClass}
-              placeholder="e.g., 48.8584"
-              value={overrideLat}
-              onChange={(e) => setOverrideLat(e.target.value)}
-            />
+            <input type="number" className={inputClass} placeholder="e.g. 28.6139" value={overrideLat}
+              onChange={(e) => { setOverrideLat(e.target.value); setSelectedExistingStopId(""); }} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">Longitude</label>
-            <input
-              type="number"
-              step="any"
-              className={inputClass}
-              placeholder="e.g., 2.2945"
-              value={overrideLng}
-              onChange={(e) => setOverrideLng(e.target.value)}
-            />
+            <input type="number" className={inputClass} placeholder="e.g. 77.2090" value={overrideLng}
+              onChange={(e) => { setOverrideLng(e.target.value); setSelectedExistingStopId(""); }} />
           </div>
         </div>
 
         {/* Date */}
         <div>
           <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
-            📅 Photo Date
+            📅 Date Taken <span className="text-red-400">*</span>
           </label>
           <input
             type="date"
-            className={inputClass}
+            className={`${inputClass} ${!overrideDate ? "border-amber-500/40" : "border-teal-500/40"}`}
             value={overrideDate}
             onChange={(e) => setOverrideDate(e.target.value)}
           />
         </div>
 
-        {/* Error */}
-        {error && (
-          <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
-        )}
-
         {/* Actions */}
-        <div className="flex gap-2 pt-1">
+        <div className="flex gap-3 pt-1">
           <button
             onClick={handleConfirmUpload}
-            className="flex-1 px-4 py-2.5 bg-amber-500 font-bold text-[#0a0e1a] text-sm rounded-xl hover:bg-amber-400 transition-all shadow-lg shadow-amber-500/20"
+            disabled={!hasLat || !hasLng || !overrideDate}
+            className="flex-1 py-2.5 rounded-xl bg-amber-500 text-[#0a0e1a] font-bold text-sm hover:bg-amber-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Confirm & Upload
+            Upload Photo
           </button>
           <button
             onClick={handleCancel}
-            className="px-4 py-2.5 border border-[var(--color-border)] font-semibold text-[var(--color-text-secondary)] text-sm rounded-xl hover:bg-[var(--color-surface-hover)] transition-colors"
+            className="px-4 py-2.5 rounded-xl bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border)] text-sm hover:bg-[var(--color-surface-hover)] transition-all"
           >
             Cancel
           </button>
@@ -328,36 +340,24 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
     );
   }
 
+  // Idle state — drop zone
   return (
-    <div className="animate-fade-in">
+    <div>
       {error && (
-        <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-sm font-medium">
-          {error}
-        </div>
+        <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-sm">{error}</div>
       )}
-
       <div
-        className="h-48 border-2 border-dashed border-[var(--color-border)] hover:border-amber-500/50 rounded-2xl flex flex-col items-center justify-center p-6 text-center transition-all group cursor-pointer"
-        onDragEnter={onDrag}
-        onDragLeave={onDrag}
-        onDragOver={onDrag}
-        onDrop={onDrop}
+        className="h-52 border-2 border-dashed border-[var(--color-border)] rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-amber-500/50 transition-all cursor-pointer"
+        onDragEnter={onDrag} onDragLeave={onDrag} onDragOver={onDrag} onDrop={onDrop}
       >
-        <span className="text-4xl mb-3 opacity-60 group-hover:scale-110 group-hover:opacity-100 transition-all duration-300">📤</span>
-        <p className="text-[var(--color-text)] font-semibold text-sm">Drop photos & videos here</p>
-        <p className="text-[var(--color-text-secondary)] text-xs mt-1 max-w-xs">
-          or click to browse • Always confirms date & location before uploading
-        </p>
-
-        <label className="mt-4 cursor-pointer px-4 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-xs font-semibold hover:bg-[var(--color-surface-hover)] transition-colors">
-          Browse Files
-          <input
-            type="file"
-            className="hidden"
-            accept="image/*,video/*"
-            onChange={onFileChange}
-          />
+        <span className="text-5xl opacity-60">📸</span>
+        <p className="text-sm text-[var(--color-text-secondary)]">Drag & drop or</p>
+        <label className="cursor-pointer px-5 py-2.5 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/20 text-sm font-semibold hover:bg-amber-500/25 transition-all">
+          Choose File
+          <input type="file" className="hidden" accept="image/*,video/*"
+            onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} />
         </label>
+        <p className="text-xs text-[var(--color-text-secondary)] opacity-50">Location + Date required to upload</p>
       </div>
     </div>
   );
