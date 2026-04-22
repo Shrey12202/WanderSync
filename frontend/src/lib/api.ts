@@ -154,7 +154,7 @@ export async function deleteStop(stopId: string): Promise<void> {
 
 export async function uploadMedia(
   file: File,
-  tripId: string,
+  tripId?: string,
   stopId?: string,
   caption?: string,
   latitude?: number,
