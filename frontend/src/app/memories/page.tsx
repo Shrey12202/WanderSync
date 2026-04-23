@@ -24,7 +24,7 @@ export default function MemoryWallPage() {
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/satellite-streets-v12",
+      style: "mapbox://styles/mapbox/dark-v11",
       center: [20, 30],
       zoom: 1.5,
       projection: { name: "globe" } as any,

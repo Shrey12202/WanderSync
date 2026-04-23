@@ -10,7 +10,7 @@
  */
 import { useAuth } from "@clerk/nextjs";
 import { useEffect } from "react";
-import { setAuthToken } from "@/lib/api";
+import { setTokenProvider } from "@/lib/api";
 
 export default function TokenProvider() {
   const { getToken, isSignedIn } = useAuth();
@@ -18,15 +18,9 @@ export default function TokenProvider() {
   useEffect(() => {
     if (!isSignedIn) return;
 
-    const refresh = async () => {
-      const token = await getToken();
-      setAuthToken(token ?? null);
-    };
+    // Cache the function so api.ts can get a fresh token on every request
+    setTokenProvider(getToken);
 
-    refresh();
-    // Refresh every 55 seconds (Clerk tokens expire after 60s)
-    const interval = setInterval(refresh, 55_000);
-    return () => clearInterval(interval);
   }, [isSignedIn, getToken]);
 
   return null;

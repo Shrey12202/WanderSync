@@ -264,7 +264,17 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setSelectedExistingStopId("");
-              // Don't set skipGeocodingRef here — we WANT to search
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && suggestions.length > 0) {
+                e.preventDefault();
+                const feature = suggestions[0];
+                skipGeocodingRef.current = true;
+                setSearchQuery(feature.properties.name || feature.properties.full_address);
+                setOverrideLng(String(feature.geometry.coordinates[0]));
+                setOverrideLat(String(feature.geometry.coordinates[1]));
+                setSuggestions([]);
+              }
             }}
           />
           {suggestions.length > 0 && (
@@ -290,6 +300,11 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
                 </li>
               ))}
             </ul>
+          )}
+          {(!hasLat || !hasLng) && searchQuery.length > 0 && suggestions.length === 0 && (
+            <p className="text-[10px] text-amber-500 mt-1.5 ml-1">
+              Select a location from the dropdown suggestions or Enter manually below.
+            </p>
           )}
         </div>
 

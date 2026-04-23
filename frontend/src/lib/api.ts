@@ -23,17 +23,27 @@ import type {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // ── Auth token cache ─────────────────────────────────────────
-// Set proactively by TokenProvider (uses useAuth hook) so it's
-// always ready before API calls fire, avoiding the window.Clerk
-// race condition.
-let _cachedToken: string | null = null;
+// We store Clerk's getToken *function* (not the string) so every
+// request calls it fresh — Clerk handles internal caching/refresh.
+let _getToken: (() => Promise<string | null>) | null = null;
 
 export function setAuthToken(token: string | null) {
-  _cachedToken = token;
+  // Legacy single-token setter — kept for compatibility but unused now
 }
 
-function getAuthToken(): string | null {
-  return _cachedToken;
+export function setTokenProvider(fn: () => Promise<string | null>) {
+  _getToken = fn;
+}
+
+async function getAuthToken(): Promise<string | null> {
+  if (_getToken) {
+    try {
+      return await _getToken();
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -51,7 +61,7 @@ async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
 
-  const token = getAuthToken();
+  const token = await getAuthToken();
 
   // Build headers as a plain Record to keep TypeScript happy with the auth header spread
   const headers: Record<string, string> = {
@@ -170,7 +180,7 @@ export async function uploadMedia(
   if (longitude !== undefined) formData.append("longitude", String(longitude));
   if (taken_at) formData.append("taken_at", taken_at);
 
-  const token = getAuthToken();
+  const token = await getAuthToken();
   const res = await fetch(`${API_BASE}/api/media/upload`, {
     method: "POST",
     body: formData,
@@ -188,7 +198,7 @@ export async function extractExif(file: File): Promise<ExifData> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const token = getAuthToken();
+  const token = await getAuthToken();
   const res = await fetch(`${API_BASE}/api/media/extract-exif`, {
     method: "POST",
     body: formData,
