@@ -103,12 +103,13 @@ async def get_heatmap_data(
     user_id: str = Depends(get_current_user_id),
 ):
     """Heatmap of stops — scoped to the authenticated user."""
+    from sqlalchemy import and_, or_
     stmt = (
         select(Stop)
         .join(Trip, Stop.trip_id == Trip.id)
         .options(selectinload(Stop.media))
         .where(
-            Trip.user_id == user_id,
+            or_(Trip.user_id == user_id, Trip.user_id.is_(None)),
             Stop.latitude.isnot(None),
             Stop.longitude.isnot(None),
         )
@@ -135,11 +136,12 @@ async def get_global_paths(
     user_id: str = Depends(get_current_user_id),
 ):
     """All trip paths for the global map — scoped to the authenticated user."""
+    from sqlalchemy import and_, or_
     stmt = (
         select(Stop)
         .join(Trip, Stop.trip_id == Trip.id)
         .where(
-            Trip.user_id == user_id,
+            or_(Trip.user_id == user_id, Trip.user_id.is_(None)),
             Stop.latitude.isnot(None),
             Stop.longitude.isnot(None),
         )

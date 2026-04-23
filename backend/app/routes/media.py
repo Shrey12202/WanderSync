@@ -27,15 +27,27 @@ async def get_all_media(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get all media for the authenticated user — trip-linked + standalone."""
+    """
+    Get all media for the authenticated user — trip-linked + standalone.
+
+    Handles legacy rows where Trip.user_id is NULL (created before auth was added):
+    those trips are treated as belonging to the current user (single-user assumption
+    matches the same permissive check in GET /api/trips/{id}).
+    """
+    from sqlalchemy import and_, or_
     stmt = (
         select(Media, Trip.title.label("trip_title"), Stop.name.label("stop_name"))
         .outerjoin(Trip, Media.trip_id == Trip.id)
         .outerjoin(Stop, Media.stop_id == Stop.id)
         .where(
             or_(
-                Trip.user_id == user_id,
-                Media.user_id == user_id,
+                # Trip-linked: trip belongs to user OR legacy trip with no owner
+                and_(
+                    Media.trip_id.isnot(None),
+                    or_(Trip.user_id == user_id, Trip.user_id.is_(None)),
+                ),
+                # Standalone: media directly owned by user
+                and_(Media.trip_id.is_(None), Media.user_id == user_id),
             )
         )
         .order_by(Media.taken_at.desc().nullslast(), Media.created_at.desc())
@@ -57,16 +69,20 @@ async def get_geotagged_media(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """
-    All geotagged media (has lat+lng) for the authenticated user.
-    Used by the Memory Wall map to place images at their GPS locations.
-    """
+    """All geotagged media (has lat+lng) — same null-user_id handling as /all."""
+    from sqlalchemy import and_, or_
     stmt = (
         select(Media, Trip.title.label("trip_title"), Stop.name.label("stop_name"))
         .outerjoin(Trip, Media.trip_id == Trip.id)
         .outerjoin(Stop, Media.stop_id == Stop.id)
         .where(
-            or_(Trip.user_id == user_id, Media.user_id == user_id),
+            or_(
+                and_(
+                    Media.trip_id.isnot(None),
+                    or_(Trip.user_id == user_id, Trip.user_id.is_(None)),
+                ),
+                and_(Media.trip_id.is_(None), Media.user_id == user_id),
+            ),
             Media.latitude.isnot(None),
             Media.longitude.isnot(None),
             Media.file_type == "image",
