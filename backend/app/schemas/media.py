@@ -44,7 +44,7 @@ class MediaResponse(BaseModel):
 
 class MediaWithContext(MediaResponse):
     """Media enriched with trip title and stop name for the global gallery."""
-    trip_title: str
+    trip_title: str = "Standalone"  # Default — overridden after model_validate
     stop_name: Optional[str] = None
 
 
