@@ -32,7 +32,7 @@ export default function TripForm() {
       const fetchPlaces = async () => {
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&types=poi,place,locality,neighborhood,address&limit=10&access_token=${token}`);
+          const res = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`);
           const data = await res.json();
           if (data.features) setSuggestions(data.features);
         } catch (e) {

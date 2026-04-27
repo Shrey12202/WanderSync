@@ -253,24 +253,40 @@ export default function MemoryWallPage() {
     const updateOcclusion = () => {
       if (!mapRef.current) return;
       const m = mapRef.current;
+      const center = m.getCenter();
+      const zoom = m.getZoom();
+      
+      // Calculate approximate horizon distance in meters based on zoom.
+      // At zoom 1.5 (default), horizon is ~7,750km.
+      const horizonDist = Math.max(1000000, 10000000 - (zoom * 1500000));
+      const fadeStart = horizonDist * 0.75; // Start fading at 75% to horizon
+
       markerEls.forEach(({ el, lngLat }) => {
-        // project returns pixel coords; if point is on far side of globe,
-        // Mapbox returns coords far outside viewport bounds
+        const distance = center.distanceTo(lngLat);
+        
+        let opacity = 1;
+        if (distance > horizonDist) {
+          opacity = 0;
+        } else if (distance > fadeStart) {
+          // Smooth fade from 1 to 0
+          opacity = 1 - ((distance - fadeStart) / (horizonDist - fadeStart));
+        }
+
+        // Fallback: also hide if way outside screen bounds
         const point = m.project(lngLat);
         const canvas = m.getCanvas();
         const w = canvas.width / (window.devicePixelRatio || 1);
         const h = canvas.height / (window.devicePixelRatio || 1);
+        const margin = 100;
+        if (
+          point.x < -margin || point.x > w + margin ||
+          point.y < -margin || point.y > h + margin
+        ) {
+          opacity = 0;
+        }
 
-        // Check if the projected point is within the visible canvas
-        // with generous padding. Points far off-screen are on the back of the globe.
-        const margin = 60;
-        const visible =
-          point.x > -margin && point.x < w + margin &&
-          point.y > -margin && point.y < h + margin &&
-          !isNaN(point.x) && !isNaN(point.y);
-
-        el.style.opacity = visible ? "1" : "0";
-        el.style.pointerEvents = visible ? "auto" : "none";
+        el.style.opacity = opacity.toFixed(2);
+        el.style.pointerEvents = opacity > 0.2 ? "auto" : "none";
       });
     };
 
