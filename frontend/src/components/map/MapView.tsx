@@ -123,6 +123,7 @@ export default function MapView({
       const SPEED = 0.12;
       const BASE_ZOOM = 1.5;
       const ZOOM_THRESHOLD = 0.3;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
       const isZoomedIn = () =>
         (mapRef.current?.getZoom() ?? BASE_ZOOM) > BASE_ZOOM + ZOOM_THRESHOLD;
@@ -136,32 +137,44 @@ export default function MapView({
         spinAnimRef.current = requestAnimationFrame(spin);
       };
 
-      // Clicking ON the globe stops spin permanently
-      const stopSpinPermanently = () => { isInteractingRef.current = true; };
+      // Any interaction on the map stops spin
+      const stopSpin = () => {
+        isInteractingRef.current = true;
+        if (idleTimer) clearTimeout(idleTimer);
+      };
 
-      // Clicking OUTSIDE the globe (on the document) resumes spin
+      // After interaction ends, resume spin after 5s of idle
+      const scheduleResume = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => { isInteractingRef.current = false; }, 5000);
+      };
+
+      // Clicking OUTSIDE the map wrapper resumes spin immediately
       const resumeOnOutsideClick = (e: MouseEvent | TouchEvent) => {
-        const canvas = canvasRef.current;
-        if (canvas && !canvas.contains(e.target as Node)) {
+        const wrapper = wrapperRef.current;
+        if (wrapper && !wrapper.contains(e.target as Node)) {
+          if (idleTimer) clearTimeout(idleTimer);
           isInteractingRef.current = false;
         }
       };
 
-      map.on("mousedown", stopSpinPermanently);
-      map.on("touchstart", stopSpinPermanently);
+      map.on("mousedown", stopSpin);
+      map.on("touchstart", stopSpin);
+      map.on("mouseup", scheduleResume);
+      map.on("touchend", scheduleResume);
+      map.on("dragend", scheduleResume);
 
       document.addEventListener("mousedown", resumeOnOutsideClick);
       document.addEventListener("touchstart", resumeOnOutsideClick);
 
       spinAnimRef.current = requestAnimationFrame(spin);
 
-      // Cleanup additional listeners in the map cleanup return
-      const origCleanup = () => {
+      // Store cleanup fn on map for teardown
+      (map as any).__spinCleanup = () => {
+        if (idleTimer) clearTimeout(idleTimer);
         document.removeEventListener("mousedown", resumeOnOutsideClick);
         document.removeEventListener("touchstart", resumeOnOutsideClick);
       };
-      // Store cleanup fn on map for teardown
-      (map as any).__spinCleanup = origCleanup;
     }
 
     mapRef.current = map;
@@ -361,6 +374,11 @@ export default function MapView({
       });
 
       inner.addEventListener("click", () => {
+        // Hide tooltip immediately — the slideshow modal will overlay the map,
+        // preventing the normal mouseleave from firing
+        if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
+        inner.style.transform = "scale(1)";
+        inner.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
         if (onStopClick) onStopClick(props.id as string);
       });
 

@@ -60,6 +60,7 @@ export default function MemoryWallPage() {
     const ZOOM_THRESHOLD = 0.3;
     const isZoomedIn = () => (mapRef.current?.getZoom() ?? BASE_ZOOM) > BASE_ZOOM + ZOOM_THRESHOLD;
     const SPEED = 0.1;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const spin = () => {
       if (!isInteractingRef.current && !isZoomedIn() && mapRef.current) {
@@ -70,17 +71,31 @@ export default function MemoryWallPage() {
       animRef.current = requestAnimationFrame(spin);
     };
 
-    const stopSpin = () => { isInteractingRef.current = true; };
+    // Any interaction stops spin
+    const stopSpin = () => {
+      isInteractingRef.current = true;
+      if (idleTimer) clearTimeout(idleTimer);
+    };
 
-    // Resume spin only when clicking OUTSIDE the map container
+    // After interaction ends, resume spin after 5s of idle
+    const scheduleResume = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { isInteractingRef.current = false; }, 5000);
+    };
+
+    // Clicking OUTSIDE the map container resumes spin immediately
     const resumeOnOutsideClick = (e: MouseEvent | TouchEvent) => {
       if (mapContainer.current && !mapContainer.current.contains(e.target as Node)) {
+        if (idleTimer) clearTimeout(idleTimer);
         isInteractingRef.current = false;
       }
     };
 
     map.on("mousedown", stopSpin);
     map.on("touchstart", stopSpin);
+    map.on("mouseup", scheduleResume);
+    map.on("touchend", scheduleResume);
+    map.on("dragend", scheduleResume);
     document.addEventListener("mousedown", resumeOnOutsideClick);
     document.addEventListener("touchstart", resumeOnOutsideClick);
 
@@ -88,6 +103,7 @@ export default function MemoryWallPage() {
 
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
+      if (idleTimer) clearTimeout(idleTimer);
       document.removeEventListener("mousedown", resumeOnOutsideClick);
       document.removeEventListener("touchstart", resumeOnOutsideClick);
       markersRef.current.forEach((m) => m.remove());
@@ -107,8 +123,22 @@ export default function MemoryWallPage() {
       const thumbUrl = getThumbnailUrl(item.thumbnail_path ?? null, item.file_path);
 
       // Build a floating card element
+      // `el` is the outer wrapper — Mapbox writes its positioning transform here.
+      // We NEVER touch el.style.transform. Use `inner` for visual effects.
       const el = document.createElement("div");
       el.style.cssText = `
+        width: 80px;
+        height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      `;
+
+      const inner = document.createElement("div");
+      inner.style.cssText = `
         width: 80px;
         height: 80px;
         border-radius: 12px;
@@ -119,6 +149,7 @@ export default function MemoryWallPage() {
         transition: transform 0.2s ease, box-shadow 0.2s ease;
         background: #1a1a2e;
         position: relative;
+        flex-shrink: 0;
       `;
 
       const img = document.createElement("img");
@@ -126,21 +157,22 @@ export default function MemoryWallPage() {
       img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;";
       img.onerror = () => {
         img.src = "";
-        el.style.background = "linear-gradient(135deg,#f59e0b33,#14b8a633)";
-        el.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">🏔️</div>`;
+        inner.style.background = "linear-gradient(135deg,#f59e0b33,#14b8a633)";
+        inner.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">🏔️</div>`;
       };
-      el.appendChild(img);
+      inner.appendChild(img);
+      el.appendChild(inner);
 
-      // Hover effect
-      el.addEventListener("mouseenter", () => {
-        el.style.transform = "scale(1.15)";
-        el.style.zIndex = "999";
-        el.style.boxShadow = "0 8px 32px rgba(0,0,0,0.8), 0 0 0 2px rgba(245,158,11,0.6)";
+      // Hover effect — animate inner only, never touch el.style.transform
+      inner.addEventListener("mouseenter", () => {
+        inner.style.transform = "scale(1.15)";
+        inner.style.zIndex = "999";
+        inner.style.boxShadow = "0 8px 32px rgba(0,0,0,0.8), 0 0 0 2px rgba(245,158,11,0.6)";
       });
-      el.addEventListener("mouseleave", () => {
-        el.style.transform = "scale(1)";
-        el.style.zIndex = "1";
-        el.style.boxShadow = "0 4px 20px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,158,11,0.2)";
+      inner.addEventListener("mouseleave", () => {
+        inner.style.transform = "scale(1)";
+        inner.style.zIndex = "1";
+        inner.style.boxShadow = "0 4px 20px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,158,11,0.2)";
       });
 
       // Popup on click
