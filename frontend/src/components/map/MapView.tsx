@@ -121,8 +121,8 @@ export default function MapView({
     // ── Auto-spin globe ────────────────────────────────────────────────────
     if (spinGlobe) {
       const SPEED = 0.12;
-      const BASE_ZOOM = 1.5;          // the zoom the map starts at
-      const ZOOM_THRESHOLD = 0.3;     // any zoom-in beyond this stops spin
+      const BASE_ZOOM = 1.5;
+      const ZOOM_THRESHOLD = 0.3;
 
       const isZoomedIn = () =>
         (mapRef.current?.getZoom() ?? BASE_ZOOM) > BASE_ZOOM + ZOOM_THRESHOLD;
@@ -136,28 +136,40 @@ export default function MapView({
         spinAnimRef.current = requestAnimationFrame(spin);
       };
 
-      const stopSpin = () => { isInteractingRef.current = true; };
-      // Resume after drag/touch — but zoom-in check in loop still blocks if zoomed
-      const resumeAfterDrag = () => {
-        setTimeout(() => { isInteractingRef.current = false; }, 2000);
+      // Clicking ON the globe stops spin permanently
+      const stopSpinPermanently = () => { isInteractingRef.current = true; };
+
+      // Clicking OUTSIDE the globe (on the document) resumes spin
+      const resumeOnOutsideClick = (e: MouseEvent | TouchEvent) => {
+        const canvas = canvasRef.current;
+        if (canvas && !canvas.contains(e.target as Node)) {
+          isInteractingRef.current = false;
+        }
       };
 
-      map.on("mousedown", stopSpin);
-      map.on("touchstart", stopSpin);
-      // zoomstart/zoomend: don't use timer — isZoomedIn() in the loop handles it
-      map.on("mouseup", resumeAfterDrag);
-      map.on("touchend", resumeAfterDrag);
-      map.on("dragend", resumeAfterDrag);
-      document.addEventListener("mouseup", resumeAfterDrag);
-      document.addEventListener("touchend", resumeAfterDrag);
+      map.on("mousedown", stopSpinPermanently);
+      map.on("touchstart", stopSpinPermanently);
+
+      document.addEventListener("mousedown", resumeOnOutsideClick);
+      document.addEventListener("touchstart", resumeOnOutsideClick);
 
       spinAnimRef.current = requestAnimationFrame(spin);
+
+      // Cleanup additional listeners in the map cleanup return
+      const origCleanup = () => {
+        document.removeEventListener("mousedown", resumeOnOutsideClick);
+        document.removeEventListener("touchstart", resumeOnOutsideClick);
+      };
+      // Store cleanup fn on map for teardown
+      (map as any).__spinCleanup = origCleanup;
     }
 
     mapRef.current = map;
 
     return () => {
       if (spinAnimRef.current) cancelAnimationFrame(spinAnimRef.current);
+      // Clean up any document-level spin listeners
+      if ((map as any).__spinCleanup) (map as any).__spinCleanup();
       map.remove();
       mapRef.current = null;
       setMapLoaded(false);

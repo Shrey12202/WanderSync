@@ -71,20 +71,25 @@ export default function MemoryWallPage() {
     };
 
     const stopSpin = () => { isInteractingRef.current = true; };
-    const resumeSpin = () => { setTimeout(() => { isInteractingRef.current = false; }, 2000); };
+
+    // Resume spin only when clicking OUTSIDE the map container
+    const resumeOnOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (mapContainer.current && !mapContainer.current.contains(e.target as Node)) {
+        isInteractingRef.current = false;
+      }
+    };
 
     map.on("mousedown", stopSpin);
     map.on("touchstart", stopSpin);
-    map.on("mouseup", resumeSpin);
-    map.on("touchend", resumeSpin);
-    map.on("dragend", resumeSpin);
-    document.addEventListener("mouseup", resumeSpin);
-    document.addEventListener("touchend", resumeSpin);
+    document.addEventListener("mousedown", resumeOnOutsideClick);
+    document.addEventListener("touchstart", resumeOnOutsideClick);
 
     animRef.current = requestAnimationFrame(spin);
 
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
+      document.removeEventListener("mousedown", resumeOnOutsideClick);
+      document.removeEventListener("touchstart", resumeOnOutsideClick);
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
       map.remove();

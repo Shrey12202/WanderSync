@@ -54,7 +54,7 @@ export interface Stop {
 export interface MediaItem {
   id: string;
   stop_id: string | null;
-  trip_id: string;
+  trip_id: string | null;
   file_path: string;
   file_name: string;
   file_type: "image" | "video";

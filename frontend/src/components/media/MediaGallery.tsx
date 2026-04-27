@@ -76,7 +76,9 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
       const fetch_ = async () => {
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(editSearch)}&access_token=${token}`);
+          const res = await fetch(
+            `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(editSearch)}&types=poi,place,locality,neighborhood,address&limit=10&access_token=${token}`
+          );
           const data = await res.json();
           if (data.features) setEditSuggestions(data.features);
         } catch { /* silent */ }

@@ -28,7 +28,7 @@ class MediaResponse(BaseModel):
 
     id: uuid.UUID
     stop_id: Optional[uuid.UUID] = None
-    trip_id: uuid.UUID
+    trip_id: Optional[uuid.UUID] = None  # Optional: standalone media has no trip
     file_path: str
     file_name: str
     file_type: str
