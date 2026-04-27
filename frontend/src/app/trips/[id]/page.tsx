@@ -94,8 +94,13 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   });
   const [addLoading, setAddLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const skipGeocodingRef = useRef(false);
 
   useEffect(() => {
+    if (skipGeocodingRef.current) {
+      skipGeocodingRef.current = false;
+      return;
+    }
     if (addForm.stopName.length > 2) {
       const fetchPlaces = async () => {
         try {
@@ -254,29 +259,15 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             )}
 
             {activeTab === "upload" && (
-              <>
-                {/* Show which stop the upload will be linked to */}
-                {allStops.length > 0 && (
-                  <div className="mb-3 p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 text-xs">
-                    <p className="text-teal-400 font-semibold m-0 mb-1">📍 Uploading to:</p>
-                    <p className="text-[var(--color-text)] font-medium m-0">
-                      Stop {activeStopIndex + 1}: {allStops[activeStopIndex]?.name || "Unnamed Stop"}
-                    </p>
-                    <p className="text-[var(--color-text-secondary)] m-0 mt-1 opacity-70">
-                      Use the Timeline tab to select a different stop first.
-                    </p>
-                  </div>
-                )}
-                <UploadHandler
-                  tripId={trip.id}
-                  stopId={allStops[activeStopIndex]?.id}
-                  defaultLat={allStops[activeStopIndex]?.latitude ?? undefined}
-                  defaultLng={allStops[activeStopIndex]?.longitude ?? undefined}
-                  tripStartDate={trip.start_date ?? undefined}
-                  tripEndDate={trip.end_date ?? undefined}
-                  onUploadComplete={() => loadTrip()}
-                />
-              </>
+              <UploadHandler
+                tripId={trip.id}
+                stopId={allStops[activeStopIndex]?.id}
+                defaultLat={allStops[activeStopIndex]?.latitude ?? undefined}
+                defaultLng={allStops[activeStopIndex]?.longitude ?? undefined}
+                tripStartDate={trip.start_date ?? undefined}
+                tripEndDate={trip.end_date ?? undefined}
+                onUploadComplete={() => loadTrip()}
+              />
             )}
 
             {activeTab === "add" && (
@@ -298,7 +289,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                         <li
                           key={i}
                           className="px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                          onClick={() => {
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            skipGeocodingRef.current = true;
                             setAddForm({
                               ...addForm,
                               stopName: feature.properties.name || feature.properties.place_formatted || feature.properties.full_address,

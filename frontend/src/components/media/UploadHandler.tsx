@@ -22,7 +22,12 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
 
   // All stops for this trip (for the stop picker)
   const [tripStops, setTripStops] = useState<Stop[]>([]);
-  const [selectedExistingStopId, setSelectedExistingStopId] = useState<string>("");
+  const [selectedExistingStopId, setSelectedExistingStopId] = useState<string>(stopId || "none");
+
+  // Keep selected stop in sync if the parent prop changes (e.g. they switch tabs)
+  useEffect(() => {
+    setSelectedExistingStopId(stopId || "none");
+  }, [stopId]);
 
   // Confirmation form state
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,7 +72,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
           const res = await fetch(
-            `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&types=place,locality,poi,address&access_token=${token}`
+            `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`
           );
           const data = await res.json();
           if (data.features) setSuggestions(data.features);
@@ -137,8 +142,9 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
     setStep("uploading");
     try {
       const parsedDate = new Date(overrideDate).toISOString();
+      const finalStopId = selectedExistingStopId === "none" ? undefined : selectedExistingStopId;
 
-      const media = await uploadMedia(file, tripId, stopId, undefined, parsedLat, parsedLng, parsedDate);
+      const media = await uploadMedia(file, tripId, finalStopId, undefined, parsedLat, parsedLng, parsedDate);
 
       setStep("idle");
       setFile(null);
@@ -245,7 +251,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
               value={selectedExistingStopId}
               onChange={(e) => setSelectedExistingStopId(e.target.value)}
             >
-              <option value="">— Search / enter location manually —</option>
+              <option value="none">— None (Standalone trip photo) —</option>
               {tripStops.map((stop) => (
                 <option key={stop.id} value={stop.id}>{stop.name}</option>
               ))}
@@ -293,6 +299,9 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
                     setOverrideLng(String(feature.geometry.coordinates[0]));
                     setOverrideLat(String(feature.geometry.coordinates[1]));
                     setSuggestions([]);
+                    // If they manually searched a location, disconnect it from the active stop
+                    // so it becomes a standalone trip photo.
+                    setSelectedExistingStopId("none");
                   }}
                 >
                   <span className="font-medium block truncate">{feature.properties.name || feature.properties.full_address}</span>
