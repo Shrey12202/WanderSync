@@ -237,7 +237,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto overflow-x-visible p-4" style={{ position: 'relative' }}>
             {activeTab === "timeline" && (
               <TimelineSlider
                 stops={allStops}
@@ -254,13 +254,29 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             )}
 
             {activeTab === "upload" && (
-              <UploadHandler
-                tripId={trip.id}
-                stopId={allStops[activeStopIndex]?.id}
-                defaultLat={allStops[activeStopIndex]?.latitude ?? undefined}
-                defaultLng={allStops[activeStopIndex]?.longitude ?? undefined}
-                onUploadComplete={() => loadTrip()}
-              />
+              <>
+                {/* Show which stop the upload will be linked to */}
+                {allStops.length > 0 && (
+                  <div className="mb-3 p-3 rounded-xl bg-teal-500/10 border border-teal-500/20 text-xs">
+                    <p className="text-teal-400 font-semibold m-0 mb-1">📍 Uploading to:</p>
+                    <p className="text-[var(--color-text)] font-medium m-0">
+                      Stop {activeStopIndex + 1}: {allStops[activeStopIndex]?.name || "Unnamed Stop"}
+                    </p>
+                    <p className="text-[var(--color-text-secondary)] m-0 mt-1 opacity-70">
+                      Use the Timeline tab to select a different stop first.
+                    </p>
+                  </div>
+                )}
+                <UploadHandler
+                  tripId={trip.id}
+                  stopId={allStops[activeStopIndex]?.id}
+                  defaultLat={allStops[activeStopIndex]?.latitude ?? undefined}
+                  defaultLng={allStops[activeStopIndex]?.longitude ?? undefined}
+                  tripStartDate={trip.start_date ?? undefined}
+                  tripEndDate={trip.end_date ?? undefined}
+                  onUploadComplete={() => loadTrip()}
+                />
+              </>
             )}
 
             {activeTab === "add" && (
@@ -277,11 +293,11 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     onChange={(e) => setAddForm({ ...addForm, stopName: e.target.value })}
                   />
                   {suggestions.length > 0 && (
-                    <ul className="absolute z-10 w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg max-h-48 overflow-y-auto shadow-xl custom-scrollbar left-0">
+                    <ul className="absolute z-[9999] w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg max-h-48 overflow-y-auto shadow-2xl custom-scrollbar left-0" style={{ position: 'absolute' }}>
                       {suggestions.map((feature, i) => (
                         <li
                           key={i}
-                          className="px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer truncate transition-colors"
+                          className="px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
                           onClick={() => {
                             setAddForm({
                               ...addForm,
@@ -292,7 +308,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                             setSuggestions([]);
                           }}
                         >
-                          {feature.properties.name || feature.properties.full_address || feature.properties.place_formatted}
+                          <span className="font-medium block truncate">{feature.properties.name || feature.properties.full_address}</span>
                           <span className="block text-[10px] text-[var(--color-text-secondary)] mt-0.5 truncate">
                             {feature.properties.full_address || feature.properties.place_formatted}
                           </span>

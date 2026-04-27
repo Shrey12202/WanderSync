@@ -117,84 +117,167 @@ export default function MemoryWallPage() {
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
+    // Group media by nearby GPS coordinates (within ~100m)
+    const GPS_THRESHOLD = 0.001;
+    const groups: { lng: number; lat: number; items: MediaWithContext[] }[] = [];
+
     media.forEach((item) => {
       if (item.latitude == null || item.longitude == null) return;
+      const existing = groups.find(
+        (g) => Math.abs(g.lng - item.longitude!) < GPS_THRESHOLD && Math.abs(g.lat - item.latitude!) < GPS_THRESHOLD
+      );
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        groups.push({ lng: item.longitude, lat: item.latitude, items: [item] });
+      }
+    });
 
-      const thumbUrl = getThumbnailUrl(item.thumbnail_path ?? null, item.file_path);
+    // Store element refs for occlusion checks
+    const markerEls: { el: HTMLDivElement; lngLat: mapboxgl.LngLat }[] = [];
 
-      // Build a floating card element
-      // `el` is the outer wrapper — Mapbox writes its positioning transform here.
-      // We NEVER touch el.style.transform. Use `inner` for visual effects.
+    groups.forEach((group) => {
+      const firstItem = group.items[0];
+      const firstThumb = getThumbnailUrl(firstItem.thumbnail_path ?? null, firstItem.file_path);
+
+      // Outer wrapper — Mapbox positioning only
       const el = document.createElement("div");
       el.style.cssText = `
-        width: 80px;
-        height: 80px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
+        width: 56px; height: 56px;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0; padding: 0; box-sizing: border-box;
+        transition: opacity 0.3s ease;
       `;
 
       const inner = document.createElement("div");
       inner.style.cssText = `
-        width: 80px;
-        height: 80px;
-        border-radius: 12px;
-        overflow: hidden;
+        width: 56px; height: 56px;
+        border-radius: 10px; overflow: hidden;
         border: 2px solid rgba(245,158,11,0.8);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,158,11,0.2);
+        box-shadow: 0 3px 16px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,158,11,0.2);
         cursor: pointer;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
-        background: #1a1a2e;
-        position: relative;
-        flex-shrink: 0;
+        background: #1a1a2e; position: relative; flex-shrink: 0;
       `;
 
       const img = document.createElement("img");
-      img.src = thumbUrl;
+      img.src = firstThumb;
       img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;";
       img.onerror = () => {
         img.src = "";
         inner.style.background = "linear-gradient(135deg,#f59e0b33,#14b8a633)";
-        inner.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">🏔️</div>`;
+        inner.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;">🏔️</div>`;
       };
       inner.appendChild(img);
+
+      // Multi-photo badge
+      if (group.items.length > 1) {
+        const badge = document.createElement("div");
+        badge.style.cssText = `
+          position:absolute;top:2px;right:2px;
+          background:rgba(0,0,0,0.7);color:#fbbf24;
+          font-size:9px;font-weight:700;
+          padding:1px 4px;border-radius:6px;
+          backdrop-filter:blur(4px);
+          border:1px solid rgba(245,158,11,0.3);
+        `;
+        badge.textContent = `${group.items.length}`;
+        inner.appendChild(badge);
+      }
+
       el.appendChild(inner);
 
-      // Hover effect — animate inner only, never touch el.style.transform
+      // Hover
       inner.addEventListener("mouseenter", () => {
         inner.style.transform = "scale(1.15)";
         inner.style.zIndex = "999";
-        inner.style.boxShadow = "0 8px 32px rgba(0,0,0,0.8), 0 0 0 2px rgba(245,158,11,0.6)";
+        inner.style.boxShadow = "0 6px 24px rgba(0,0,0,0.8), 0 0 0 2px rgba(245,158,11,0.6)";
       });
       inner.addEventListener("mouseleave", () => {
         inner.style.transform = "scale(1)";
         inner.style.zIndex = "1";
-        inner.style.boxShadow = "0 4px 20px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,158,11,0.2)";
+        inner.style.boxShadow = "0 3px 16px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,158,11,0.2)";
       });
 
-      // Popup on click
-      const popup = new mapboxgl.Popup({ offset: 10, closeButton: true, maxWidth: "260px" })
-        .setHTML(`
-          <div style="background:#0d1117;border-radius:12px;overflow:hidden;font-family:Inter,sans-serif;">
-            <img src="${thumbUrl}" style="width:100%;max-height:180px;object-fit:cover;display:block;" />
-            <div style="padding:10px 12px;">
-              ${item.caption ? `<p style="color:#fff;font-size:13px;margin:0 0 4px;">${item.caption}</p>` : ""}
-              <p style="color:#f59e0b;font-size:11px;margin:0;">${item.trip_title || "Standalone"}</p>
-              ${item.taken_at ? `<p style="color:#6b7280;font-size:10px;margin:4px 0 0;">${new Date(item.taken_at).toLocaleDateString()}</p>` : ""}
+      // Build popup with auto-rotating images for multi-photo groups
+      const buildPopupHTML = (idx: number) => {
+        const it = group.items[idx];
+        const url = getThumbnailUrl(it.thumbnail_path ?? null, it.file_path);
+        const counter = group.items.length > 1 ? `<div style="position:absolute;top:6px;right:8px;background:rgba(0,0,0,0.7);color:#fbbf24;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;">${idx + 1}/${group.items.length}</div>` : "";
+        return `
+          <div style="background:#0d1117;border-radius:10px;overflow:hidden;font-family:Inter,sans-serif;position:relative;">
+            ${counter}
+            <img src="${url}" style="width:100%;max-height:120px;object-fit:cover;display:block;" />
+            <div style="padding:6px 8px;">
+              ${it.caption ? `<p style="color:#fff;font-size:11px;margin:0 0 2px;">${it.caption}</p>` : ""}
+              <p style="color:#f59e0b;font-size:10px;margin:0;">${it.trip_title || "Standalone"}</p>
+              ${it.taken_at ? `<p style="color:#6b7280;font-size:9px;margin:2px 0 0;">${new Date(it.taken_at).toLocaleDateString()}</p>` : ""}
             </div>
           </div>
-        `);
+        `;
+      };
 
+      const popup = new mapboxgl.Popup({ offset: 8, closeButton: true, maxWidth: "180px" })
+        .setHTML(buildPopupHTML(0));
+
+      // Auto-rotate for multi-photo
+      if (group.items.length > 1) {
+        let currentIdx = 0;
+        let rotateInterval: ReturnType<typeof setInterval> | null = null;
+
+        popup.on("open", () => {
+          currentIdx = 0;
+          rotateInterval = setInterval(() => {
+            currentIdx = (currentIdx + 1) % group.items.length;
+            const el = popup.getElement()?.querySelector(".mapboxgl-popup-content");
+            if (el) el.innerHTML = buildPopupHTML(currentIdx);
+          }, 3000);
+        });
+
+        popup.on("close", () => {
+          if (rotateInterval) clearInterval(rotateInterval);
+        });
+      }
+
+      const lngLat = new mapboxgl.LngLat(group.lng, group.lat);
       const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([item.longitude, item.latitude])
+        .setLngLat(lngLat)
         .setPopup(popup)
         .addTo(map);
 
       markersRef.current.push(marker);
+      markerEls.push({ el, lngLat });
     });
+
+    // ── Globe-edge occlusion — hide markers behind the horizon ──
+    const updateOcclusion = () => {
+      if (!mapRef.current) return;
+      const m = mapRef.current;
+      markerEls.forEach(({ el, lngLat }) => {
+        // project returns pixel coords; if point is on far side of globe,
+        // Mapbox returns coords far outside viewport bounds
+        const point = m.project(lngLat);
+        const canvas = m.getCanvas();
+        const w = canvas.width / (window.devicePixelRatio || 1);
+        const h = canvas.height / (window.devicePixelRatio || 1);
+
+        // Check if the projected point is within the visible canvas
+        // with generous padding. Points far off-screen are on the back of the globe.
+        const margin = 60;
+        const visible =
+          point.x > -margin && point.x < w + margin &&
+          point.y > -margin && point.y < h + margin &&
+          !isNaN(point.x) && !isNaN(point.y);
+
+        el.style.opacity = visible ? "1" : "0";
+        el.style.pointerEvents = visible ? "auto" : "none";
+      });
+    };
+
+    map.on("move", updateOcclusion);
+    map.on("zoom", updateOcclusion);
+    map.on("render", updateOcclusion);
+    updateOcclusion(); // initial check
   }
 
   return (

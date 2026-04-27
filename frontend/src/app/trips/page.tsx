@@ -104,7 +104,11 @@ export default function TripsDashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {trips.map((trip) => (
-              <TripCard key={trip.id} trip={trip} />
+              <TripCard key={trip.id} trip={trip} onTripUpdate={() => {
+                // Reload trips after any change
+                setLoading(true);
+                getTrips().then(setTrips).catch(console.error).finally(() => setLoading(false));
+              }} />
             ))}
           </div>
         )}

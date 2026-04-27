@@ -304,7 +304,10 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
                               setEditSuggestions([]);
                             }}
                           >
-                            {f.properties.name || f.properties.full_address}
+                            <span className="font-medium block truncate">{f.properties.name || f.properties.full_address}</span>
+                            <span className="block text-[10px] text-white/40 mt-0.5 truncate">
+                              {f.properties.full_address || f.properties.place_formatted}
+                            </span>
                           </li>
                         ))}
                       </ul>

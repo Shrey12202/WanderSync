@@ -9,10 +9,12 @@ interface UploadHandlerProps {
   stopId?: string;
   defaultLat?: number;
   defaultLng?: number;
+  tripStartDate?: string;         // Constrain date picker to trip range
+  tripEndDate?: string;
   onUploadComplete: (media: MediaItem) => void;
 }
 
-export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, onUploadComplete }: UploadHandlerProps) {
+export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, tripStartDate, tripEndDate, onUploadComplete }: UploadHandlerProps) {
   const [file, setFile] = useState<File | null>(null);
   const [step, setStep] = useState<"idle" | "analyzing" | "confirm" | "uploading">("idle");
   const [exif, setExif] = useState<ExifData | null>(null);
@@ -293,7 +295,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
                     setSuggestions([]);
                   }}
                 >
-                  <span className="font-medium">{feature.properties.name || feature.properties.full_address}</span>
+                  <span className="font-medium block truncate">{feature.properties.name || feature.properties.full_address}</span>
                   <span className="block text-[10px] text-[var(--color-text-secondary)] mt-0.5 truncate">
                     {feature.properties.full_address || feature.properties.place_formatted}
                   </span>
@@ -332,6 +334,8 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
             className={`${inputClass} ${!overrideDate ? "border-amber-500/40" : "border-teal-500/40"}`}
             value={overrideDate}
             onChange={(e) => setOverrideDate(e.target.value)}
+            min={tripStartDate || undefined}
+            max={tripEndDate || undefined}
           />
         </div>
 
