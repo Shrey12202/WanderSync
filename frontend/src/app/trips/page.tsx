@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTrips } from "@/lib/api";
+import { getTrips, getAllMedia } from "@/lib/api";
 import type { TripSummary } from "@/types";
 import TripCard from "@/components/trips/TripCard";
 import Link from "next/link";
@@ -9,12 +9,18 @@ import Link from "next/link";
 export default function TripsDashboard() {
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalMediaCount, setTotalMediaCount] = useState(0); // Bug 3 — true total incl. standalone
 
   useEffect(() => {
     async function load() {
       try {
-        const tripsData = await getTrips();
+        // Bug 3 — fetch trips AND all media concurrently so photo count includes standalones
+        const [tripsData, allMedia] = await Promise.all([
+          getTrips(),
+          getAllMedia().catch(() => []),
+        ]);
         setTrips(tripsData);
+        setTotalMediaCount(allMedia.length);
       } catch (err) {
         console.error("Failed to load dashboard:", err);
       } finally {
@@ -25,7 +31,6 @@ export default function TripsDashboard() {
   }, []);
 
   const totalStops = trips.reduce((sum, t) => sum + t.stop_count, 0);
-  const totalMedia = trips.reduce((sum, t) => sum + t.media_count, 0);
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -52,7 +57,7 @@ export default function TripsDashboard() {
         {[
           { label: "Trips", value: trips.length, icon: "✈️", color: "amber" },
           { label: "Stops", value: totalStops, icon: "📍", color: "teal" },
-          { label: "Photos", value: totalMedia, icon: "📷", color: "purple" },
+          { label: "Photos", value: totalMediaCount, icon: "📷", color: "purple" },
         ].map((stat) => (
           <div
             key={stat.label}
@@ -105,9 +110,12 @@ export default function TripsDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {trips.map((trip) => (
               <TripCard key={trip.id} trip={trip} onTripUpdate={() => {
-                // Reload trips after any change
+                // Reload trips and media count after any change
                 setLoading(true);
-                getTrips().then(setTrips).catch(console.error).finally(() => setLoading(false));
+                Promise.all([getTrips(), getAllMedia().catch(() => [])])
+                  .then(([t, m]) => { setTrips(t); setTotalMediaCount(m.length); })
+                  .catch(console.error)
+                  .finally(() => setLoading(false));
               }} />
             ))}
           </div>

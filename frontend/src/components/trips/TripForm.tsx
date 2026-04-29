@@ -11,6 +11,9 @@ interface ItineraryStop {
   longitude: number;
 }
 
+const TITLE_MAX = 100;
+const DESC_MAX = 500;
+
 export default function TripForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -50,6 +53,22 @@ export default function TripForm() {
     e.preventDefault();
     if (!form.title.trim()) {
       setError("Trip title is required");
+      return;
+    }
+
+    // Bug 7 — enforce char limits
+    if (form.title.length > TITLE_MAX) {
+      setError(`Title must be ${TITLE_MAX} characters or fewer`);
+      return;
+    }
+    if ((form.description?.length ?? 0) > DESC_MAX) {
+      setError(`Description must be ${DESC_MAX} characters or fewer`);
+      return;
+    }
+
+    // Bug 6 — date order validation
+    if (form.start_date && form.end_date && form.start_date > form.end_date) {
+      setError("Start date cannot be after the end date.");
       return;
     }
 
@@ -98,6 +117,8 @@ export default function TripForm() {
   const inputClass =
     "w-full px-4 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all placeholder:text-[var(--color-text-secondary)]/50";
 
+  const counterClass = "text-right text-[10px] mt-1";
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in w-full max-w-2xl mx-auto">
       {error && (
@@ -118,9 +139,14 @@ export default function TripForm() {
             className={inputClass}
             placeholder="e.g., Eurotrip 2026"
             value={form.title}
+            maxLength={TITLE_MAX}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
             required
           />
+          {/* Bug 7 — character counter */}
+          <p className={`${counterClass} ${form.title.length >= TITLE_MAX ? "text-red-400" : "text-[var(--color-text-secondary)]"}`}>
+            {form.title.length} / {TITLE_MAX}
+          </p>
         </div>
 
         <div>
@@ -132,8 +158,13 @@ export default function TripForm() {
             rows={2}
             placeholder="What's the vibe?"
             value={form.description}
+            maxLength={DESC_MAX}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
+          {/* Bug 7 — character counter */}
+          <p className={`${counterClass} ${(form.description?.length ?? 0) >= DESC_MAX ? "text-red-400" : "text-[var(--color-text-secondary)]"}`}>
+            {form.description?.length ?? 0} / {DESC_MAX}
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -156,10 +187,18 @@ export default function TripForm() {
               type="date"
               className={inputClass}
               value={form.end_date}
+              /* Bug 6 — end date must be >= start date */
+              min={form.start_date || undefined}
               onChange={(e) => setForm({ ...form, end_date: e.target.value })}
             />
           </div>
         </div>
+        {/* Bug 6 — inline date error */}
+        {form.start_date && form.end_date && form.start_date > form.end_date && (
+          <p className="text-red-400 text-xs flex items-center gap-1">
+            ⚠️ End date cannot be before the start date.
+          </p>
+        )}
       </div>
 
       {/* Rapid Itinerary Builder */}
@@ -222,7 +261,7 @@ export default function TripForm() {
       <div className="flex gap-3 pt-4">
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !!(form.start_date && form.end_date && form.start_date > form.end_date)}
           className="flex-1 px-6 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-[#0a0e1a] font-bold text-base hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 transition-all duration-200 shadow-xl shadow-amber-500/20"
         >
           {loading ? "Constructing Journey..." : `Create Trip with ${stops.length} Stops`}

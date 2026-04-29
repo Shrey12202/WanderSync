@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { getTrips, extractExif } from "@/lib/api";
-import type { TripSummary, ExifData } from "@/types";
+import type { TripSummary, ExifData, MediaItem } from "@/types";
 import UploadHandler from "@/components/media/UploadHandler";
+import MediaGallery from "@/components/media/MediaGallery";
 
 type Tab = "upload" | "exif";
 
@@ -15,6 +16,9 @@ export default function UploadPage() {
   const [selectedTripId, setSelectedTripId] = useState<string>("__standalone__");
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("upload");
+
+  // Bug 5 — store recently uploaded items so user can edit them inline
+  const [recentUploads, setRecentUploads] = useState<MediaItem[]>([]);
 
   // EXIF state
   const [exifData, setExifData] = useState<ExifData | null>(null);
@@ -27,8 +31,8 @@ export default function UploadPage() {
     getTrips()
       .then((data) => {
         setTrips(data);
-        // Default to first trip if any exist
-        if (data.length > 0) setSelectedTripId(data[0].id);
+        // Default to standalone (no trip) — user can select a trip if they want
+        // (keeps the original behaviour where standalone was the default)
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -99,7 +103,11 @@ export default function UploadPage() {
               <select
                 className="w-full px-4 py-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:border-amber-500/50 transition-all"
                 value={selectedTripId}
-                onChange={(e) => setSelectedTripId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedTripId(e.target.value);
+                  // Reset recent uploads when trip changes
+                  setRecentUploads([]);
+                }}
               >
                 <option value="__standalone__">📌 No trip — standalone memory</option>
                 {trips.map((trip) => (
@@ -112,9 +120,38 @@ export default function UploadPage() {
           <div className="glass rounded-2xl p-6 border border-[var(--color-border)]">
             <UploadHandler
               tripId={selectedTripId === "__standalone__" ? undefined : selectedTripId}
-              onUploadComplete={(media) => console.log("Uploaded:", media)}
+              onUploadComplete={(media) => {
+                // Bug 5 — prepend to recent uploads so user can edit immediately
+                setRecentUploads((prev) => [media, ...prev]);
+              }}
             />
           </div>
+
+          {/* Bug 5 — Recent uploads gallery with edit capability */}
+          {recentUploads.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <h2 className="text-sm font-bold text-[var(--color-text)] m-0">
+                  ✅ Just Uploaded
+                </h2>
+                <span className="text-xs text-[var(--color-text-secondary)] bg-[var(--color-surface)] px-2 py-0.5 rounded-full border border-[var(--color-border)]">
+                  {recentUploads.length} {recentUploads.length === 1 ? "photo" : "photos"}
+                </span>
+                <span className="text-xs text-[var(--color-text-secondary)] opacity-60 ml-auto">
+                  Click to edit metadata ✏️
+                </span>
+              </div>
+              <div className="glass rounded-2xl p-4 border border-teal-500/20">
+                <MediaGallery
+                  media={recentUploads}
+                  onMediaUpdate={() => {
+                    // Re-fetch recent uploads isn't necessary here — the lightbox
+                    // will already show updated data after the PUT
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </>
       )}
 

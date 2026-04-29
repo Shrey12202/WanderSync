@@ -6,6 +6,9 @@ import type { TripSummary, UpdateTripRequest } from "@/types";
 import { formatDateRange, getDurationDays } from "@/lib/utils";
 import { updateTrip, deleteTrip } from "@/lib/api";
 
+const TITLE_MAX = 100;
+const DESC_MAX = 500;
+
 interface TripCardProps {
   trip: TripSummary;
   onTripUpdate?: () => void;
@@ -39,9 +42,16 @@ export default function TripCard({ trip, onTripUpdate }: TripCardProps) {
     try {
       const data: UpdateTripRequest = {};
       if (editMode === "rename") {
-        data.title = editTitle.trim() || trip.title;
+        if (!editTitle.trim()) return;
+        if (editTitle.length > TITLE_MAX) return;
+        data.title = editTitle.trim();
       } else {
-        data.title = editTitle.trim() || trip.title;
+        if (!editTitle.trim()) return;
+        if (editTitle.length > TITLE_MAX) return;
+        if (editDesc.length > DESC_MAX) return;
+        // Bug 6 — validate date order
+        if (editStart && editEnd && editStart > editEnd) return;
+        data.title = editTitle.trim();
         data.description = editDesc.trim() || undefined;
         data.start_date = editStart || undefined;
         data.end_date = editEnd || undefined;
@@ -71,6 +81,7 @@ export default function TripCard({ trip, onTripUpdate }: TripCardProps) {
 
   const inputClass =
     "w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:border-amber-500/50 transition-all placeholder:text-[var(--color-text-secondary)]/50";
+  const counterClass = "text-right text-[10px] mt-1";
 
   // ── Inline edit modal ────────────────────────────────────────
   if (editMode) {
@@ -86,9 +97,14 @@ export default function TripCard({ trip, onTripUpdate }: TripCardProps) {
             type="text"
             className={inputClass}
             value={editTitle}
+            maxLength={TITLE_MAX}
             onChange={(e) => setEditTitle(e.target.value)}
             autoFocus
           />
+          {/* Bug 7 — counter */}
+          <p className={`${counterClass} ${editTitle.length >= TITLE_MAX ? "text-red-400" : "text-[var(--color-text-secondary)]"}`}>
+            {editTitle.length} / {TITLE_MAX}
+          </p>
         </div>
 
         {editMode === "details" && (
@@ -100,8 +116,13 @@ export default function TripCard({ trip, onTripUpdate }: TripCardProps) {
                 rows={2}
                 placeholder="What's the vibe?"
                 value={editDesc}
+                maxLength={DESC_MAX}
                 onChange={(e) => setEditDesc(e.target.value)}
               />
+              {/* Bug 7 — counter */}
+              <p className={`${counterClass} ${editDesc.length >= DESC_MAX ? "text-red-400" : "text-[var(--color-text-secondary)]"}`}>
+                {editDesc.length} / {DESC_MAX}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -110,16 +131,23 @@ export default function TripCard({ trip, onTripUpdate }: TripCardProps) {
               </div>
               <div>
                 <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">End</label>
-                <input type="date" className={inputClass} value={editEnd} onChange={(e) => setEditEnd(e.target.value)} />
+                {/* Bug 6 — min keeps end >= start */}
+                <input type="date" className={inputClass} value={editEnd} min={editStart || undefined} onChange={(e) => setEditEnd(e.target.value)} />
               </div>
             </div>
+            {/* Bug 6 — inline error */}
+            {editStart && editEnd && editStart > editEnd && (
+              <p className="text-red-400 text-xs flex items-center gap-1">
+                ⚠️ End date cannot be before the start date.
+              </p>
+            )}
           </>
         )}
 
         <div className="flex gap-2 pt-1">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || editTitle.length > TITLE_MAX || editDesc.length > DESC_MAX || !!(editStart && editEnd && editStart > editEnd)}
             className="flex-1 py-2 rounded-lg bg-amber-500 text-[#0a0e1a] font-bold text-xs hover:bg-amber-400 disabled:opacity-50 transition-all"
           >
             {saving ? "Saving..." : "Save"}

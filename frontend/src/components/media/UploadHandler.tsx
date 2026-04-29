@@ -19,6 +19,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
   const [step, setStep] = useState<"idle" | "analyzing" | "confirm" | "uploading">("idle");
   const [exif, setExif] = useState<ExifData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState(false); // Bug 2
 
   // All stops for this trip (for the stop picker)
   const [tripStops, setTripStops] = useState<Stop[]>([]);
@@ -150,6 +151,11 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       setFile(null);
       setOverrideLat(""); setOverrideLng(""); setOverrideDate("");
       setSearchQuery(""); setSelectedExistingStopId("");
+
+      // Bug 2 — success toast that auto-dismisses after 3s
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 3000);
+
       onUploadComplete(media);
     } catch (err: any) {
       setError(err.message || "Failed to upload");
@@ -242,16 +248,17 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
           </div>
         )}
 
-        {/* Existing stop picker */}
+        {/* Existing stop picker — Bug 13: hide "None" option when inside a trip */}
         {tripStops.length > 0 && (
           <div>
-            <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">📌 Use existing stop</label>
+            <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">📌 Attach to stop</label>
             <select
               className={inputClass}
               value={selectedExistingStopId}
               onChange={(e) => setSelectedExistingStopId(e.target.value)}
             >
-              <option value="none">— None (Standalone trip photo) —</option>
+              {/* Bug 13: only show standalone option when there is no tripId */}
+              {!tripId && <option value="none">— None (Standalone memory) —</option>}
               {tripStops.map((stop) => (
                 <option key={stop.id} value={stop.id}>{stop.name}</option>
               ))}
@@ -371,6 +378,13 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
   // Idle state — drop zone
   return (
     <div>
+      {/* Bug 2 — Upload success toast */}
+      {uploadSuccess && (
+        <div className="mb-4 bg-teal-500/10 border border-teal-500/30 text-teal-400 p-3 rounded-xl text-sm flex items-center gap-2 animate-fade-in">
+          <span className="text-lg">✅</span>
+          <span className="font-semibold">Photo uploaded successfully!</span>
+        </div>
+      )}
       {error && (
         <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-sm">{error}</div>
       )}

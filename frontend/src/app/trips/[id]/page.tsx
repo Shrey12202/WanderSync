@@ -41,9 +41,12 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     .sort((a, b) => a.sequence_order - b.sequence_order) ?? [];
 
   // All media: use tripMedia (fetched from /api/trips/{id}/media — includes all media for the trip)
-  // This is the single source of truth — stop-linked and unlinked deduplicated by id
   const allMedia = tripMedia;
 
+  // Geotagged media for map markers (Bug 12)
+  const geotaggedMedia = tripMedia.filter(
+    (m) => m.latitude != null && m.longitude != null && m.file_type === "image"
+  );
 
   // Load trip data and all media
   const loadTrip = useCallback(async () => {
@@ -93,6 +96,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     arrivalTime: "",
   });
   const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null); // Bug 1
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const skipGeocodingRef = useRef(false);
 
@@ -125,6 +129,18 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     e.preventDefault();
     if (!trip) return;
 
+    // Bug 1 — Location is mandatory
+    const hasLocation =
+      addForm.stopName.trim().length > 0 &&
+      addForm.latitude.trim().length > 0 &&
+      addForm.longitude.trim().length > 0;
+
+    if (!hasLocation) {
+      setAddError("📍 Location is required — search for a place and select it from the dropdown.");
+      return;
+    }
+    setAddError(null);
+
     setAddLoading(true);
     try {
       // Create a day if none exist
@@ -151,6 +167,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       await loadTrip();
     } catch (err) {
       console.error("Failed to add stop:", err);
+      setAddError("Failed to add stop. Please try again.");
     } finally {
       setAddLoading(false);
     }
@@ -169,7 +186,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       <div className="h-full flex flex-col items-center justify-center gap-4">
         <span className="text-5xl">🔍</span>
         <p className="text-[var(--color-text-secondary)]">Trip not found</p>
-        <Link href="/" className="text-amber-400 text-sm no-underline hover:underline">
+        <Link href="/trips" className="text-amber-400 text-sm no-underline hover:underline">
           ← Back to dashboard
         </Link>
       </div>
@@ -184,8 +201,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
         <div className="flex items-center gap-4">
+          {/* Bug 9 — Back goes to /trips not / */}
           <Link
-            href="/"
+            href="/trips"
             className="text-[var(--color-text-secondary)] hover:text-[var(--color-text)] no-underline text-sm transition-colors"
           >
             ← Back
@@ -201,11 +219,12 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Map (main area) */}
+        {/* Map (main area) — Bug 12: pass geotaggedMedia as mediaMarkers */}
         <div className="flex-1 p-4">
           <MapView
             mapData={mapData}
             activeStopIndex={activeStopIndex}
+            mediaMarkers={geotaggedMedia}
             onStopClick={(stopId) => {
               const idx = allStops.findIndex((s) => s.id === stopId);
               if (idx >= 0) setActiveStopIndex(idx);
@@ -244,14 +263,25 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto overflow-x-visible p-4" style={{ position: 'relative' }}>
             {activeTab === "timeline" && (
-              <TimelineSlider
-                stops={allStops}
-                activeIndex={activeStopIndex}
-                onIndexChange={setActiveStopIndex}
-                isPlaying={isPlaying}
-                onPlayToggle={() => setIsPlaying(!isPlaying)}
-                onStopsUpdate={() => loadTrip()}
-              />
+              <>
+                {/* Bug 10 — Show description above timeline */}
+                {trip.description && (
+                  <div className="mb-4 p-3 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-sm text-[var(--color-text-secondary)] leading-relaxed">
+                    <p className="text-xs font-semibold text-[var(--color-text)] mb-1 flex items-center gap-1">
+                      📝 About this trip
+                    </p>
+                    <p className="m-0 text-xs">{trip.description}</p>
+                  </div>
+                )}
+                <TimelineSlider
+                  stops={allStops}
+                  activeIndex={activeStopIndex}
+                  onIndexChange={setActiveStopIndex}
+                  isPlaying={isPlaying}
+                  onPlayToggle={() => setIsPlaying(!isPlaying)}
+                  onStopsUpdate={() => loadTrip()}
+                />
+              </>
             )}
 
             {activeTab === "media" && (
@@ -272,16 +302,25 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
             {activeTab === "add" && (
               <form onSubmit={handleAddStop} className="space-y-4 animate-fade-in">
+                {/* Bug 1 — Show location error */}
+                {addError && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs">
+                    {addError}
+                  </div>
+                )}
                 <div className="relative">
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    Search Location Name
+                    Search Location Name <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     className={inputClass}
                     placeholder="e.g., Eiffel Tower"
                     value={addForm.stopName}
-                    onChange={(e) => setAddForm({ ...addForm, stopName: e.target.value })}
+                    onChange={(e) => {
+                      setAddForm({ ...addForm, stopName: e.target.value });
+                      setAddError(null);
+                    }}
                   />
                   {suggestions.length > 0 && (
                     <ul className="absolute z-[9999] w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg max-h-48 overflow-y-auto shadow-2xl custom-scrollbar left-0" style={{ position: 'absolute' }}>
@@ -299,6 +338,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                               latitude: String(feature.geometry.coordinates[1]),
                             });
                             setSuggestions([]);
+                            setAddError(null);
                           }}
                         >
                           <span className="font-medium block truncate">{feature.properties.name || feature.properties.full_address}</span>
@@ -313,7 +353,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                      Latitude
+                      Latitude <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="number"
@@ -326,7 +366,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                      Longitude
+                      Longitude <span className="text-red-400">*</span>
                     </label>
                     <input
                       type="number"
@@ -360,14 +400,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             )}
           </div>
 
-          {/* ── Finish Trip footer — visible on all tabs ── */}
+          {/* Bug 11 — "Save & Exit" instead of "Finish & View on Map" */}
           <div className="shrink-0 p-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
             <button
-              onClick={() => router.push("/")}
+              onClick={() => router.push("/trips")}
               className="w-full py-3 rounded-2xl font-bold text-sm transition-all bg-gradient-to-r from-amber-500 to-teal-500 text-[#0a0e1a] hover:from-amber-400 hover:to-teal-400 shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
             >
               <span>✓</span>
-              Finish &amp; View on Map
+              Save &amp; Exit
             </button>
           </div>
         </div>

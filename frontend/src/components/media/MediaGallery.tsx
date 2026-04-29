@@ -1,7 +1,7 @@
 "use client";
 
 import type { MediaItem } from "@/types";
-import { getMediaUrl, getThumbnailUrl, updateMedia } from "@/lib/api";
+import { getMediaUrl, getThumbnailUrl, updateMedia, deleteMedia } from "@/lib/api";
 import { useState, useEffect, useCallback } from "react";
 
 interface MediaGalleryProps {
@@ -15,6 +15,9 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Bug 8 — delete state
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Edit form state
   const [editCaption, setEditCaption] = useState("");
@@ -37,6 +40,7 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
       setEditSuggestions([]);
       setSaveError(null);
       setEditing(false);
+      setConfirmDelete(false); // Bug 8 — reset on photo switch
     }
   }, [lightboxIndex]);
 
@@ -113,6 +117,19 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
 
   const handleSave = async () => {
     if (!activeMedia) return;
+
+    // Bug 4 — location and date are mandatory
+    const hasLat = editLat !== "" && !isNaN(parseFloat(editLat));
+    const hasLng = editLng !== "" && !isNaN(parseFloat(editLng));
+    if (!hasLat || !hasLng) {
+      setSaveError("📍 Location (lat/lng) is required. Images without location won't appear on the Memory Wall.");
+      return;
+    }
+    if (!editDate) {
+      setSaveError("📅 Date Taken is required. Images without a date won't appear on the Memory Wall.");
+      return;
+    }
+
     setSaving(true);
     setSaveError(null);
     try {
@@ -131,6 +148,22 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
       setSaveError(err.message || "Failed to save changes");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Bug 8 — delete handler
+  const handleDelete = async () => {
+    if (!activeMedia) return;
+    setDeleting(true);
+    try {
+      await deleteMedia(activeMedia.id);
+      setLightboxIndex(null);
+      setConfirmDelete(false);
+      onMediaUpdate?.();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to delete");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -254,12 +287,40 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
                       {lightboxIndex! + 1} / {media.length} • {Math.round((activeMedia.file_size || 0) / 1024)} KB
                     </span>
                   </div>
-                  <button
-                    onClick={() => setEditing(true)}
-                    className="shrink-0 px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white/80 text-xs font-semibold hover:bg-white/20 transition-all flex items-center gap-1.5"
-                  >
-                    ✏️ Edit
-                  </button>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <button
+                      onClick={() => { setEditing(true); setConfirmDelete(false); }}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white/80 text-xs font-semibold hover:bg-white/20 transition-all flex items-center gap-1.5"
+                    >
+                      ✏️ Edit
+                    </button>
+                    {/* Bug 8 — Delete button */}
+                    {!confirmDelete ? (
+                      <button
+                        onClick={() => setConfirmDelete(true)}
+                        className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold hover:bg-red-500/20 transition-all flex items-center gap-1.5"
+                      >
+                        🗑️ Delete
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-red-400 text-[10px] text-center">Sure?</p>
+                        <button
+                          onClick={handleDelete}
+                          disabled={deleting}
+                          className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-400 disabled:opacity-50 transition-all"
+                        >
+                          {deleting ? "..." : "Yes"}
+                        </button>
+                        <button
+                          onClick={() => setConfirmDelete(false)}
+                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white/60 text-xs hover:bg-white/20 transition-all"
+                        >
+                          No
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 /* Edit mode */

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { getAllMedia, getMediaUrl, getThumbnailUrl } from "@/lib/api";
+import { getAllMedia, getMediaUrl, getThumbnailUrl, deleteMedia, updateMedia } from "@/lib/api";
 import type { MediaWithContext } from "@/types";
 
 export default function PhotosPage() {
@@ -11,10 +11,17 @@ export default function PhotosPage() {
   const [loading, setLoading] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [filter, setFilter] = useState<"all" | "image" | "video">("all");
+  // Bug 8 — edit + delete state for Photos lightbox
+  const [editMode, setEditMode] = useState(false);
+  const [editCaption, setEditCaption] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     // Wait until Clerk has loaded AND confirmed the user is signed in
-    // so the auth token is guaranteed to be in the module-level cache
     if (!isLoaded || !isSignedIn) return;
 
     async function load() {
@@ -29,6 +36,19 @@ export default function PhotosPage() {
     }
     load();
   }, [isLoaded, isSignedIn]);
+
+  // Reset edit state when lightbox photo changes
+  useEffect(() => {
+    if (lightboxIndex !== null && filtered[lightboxIndex]) {
+      const m = filtered[lightboxIndex];
+      setEditCaption(m.caption || "");
+      setEditDate(m.taken_at ? new Date(m.taken_at).toISOString().split("T")[0] : "");
+      setEditMode(false);
+      setConfirmDelete(false);
+      setSaveError(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lightboxIndex]);
 
   const filtered = filter === "all" ? media : media.filter((m) => m.file_type === filter);
 
@@ -58,6 +78,48 @@ export default function PhotosPage() {
 
   const imageCount = media.filter((m) => m.file_type === "image").length;
   const videoCount = media.filter((m) => m.file_type === "video").length;
+
+  const reloadMedia = async () => {
+    try {
+      const data = await getAllMedia();
+      setMedia(data);
+    } catch { /* silent */ }
+  };
+
+  // Bug 8 — save edit
+  const handleSave = async () => {
+    if (!activeMedia) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await updateMedia(activeMedia.id, {
+        caption: editCaption || undefined,
+        taken_at: editDate ? new Date(editDate).toISOString() : null,
+      });
+      setEditMode(false);
+      await reloadMedia();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Bug 8 — delete
+  const handleDelete = async () => {
+    if (!activeMedia) return;
+    setDeleting(true);
+    try {
+      await deleteMedia(activeMedia.id);
+      setLightboxIndex(null);
+      setConfirmDelete(false);
+      await reloadMedia();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -208,41 +270,95 @@ export default function PhotosPage() {
             )}
 
             {/* Context Bar */}
-            <div className="w-full mt-4 flex items-center justify-between text-white/80 font-mono text-xs bg-black/50 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-amber-400 font-sans font-semibold text-sm">
-                    ✈️ {activeMedia.trip_title}
-                  </span>
-                  {activeMedia.stop_name && (
-                    <span className="text-teal-400 font-sans text-xs">
-                      📍 {activeMedia.stop_name}
+            <div className="w-full mt-4 text-white/80 font-mono text-xs bg-black/50 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
+              {!editMode ? (
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-amber-400 font-sans font-semibold text-sm">
+                        ✈️ {activeMedia.trip_title}
+                      </span>
+                      {activeMedia.stop_name && (
+                        <span className="text-teal-400 font-sans text-xs">
+                          📍 {activeMedia.stop_name}
+                        </span>
+                      )}
+                    </div>
+                    {activeMedia.caption && (
+                      <p className="text-white font-sans text-sm mt-0.5">{activeMedia.caption}</p>
+                    )}
+                    {activeMedia.taken_at && (
+                      <span className="text-white/50 text-[11px]">
+                        {new Date(activeMedia.taken_at).toLocaleString()}
+                      </span>
+                    )}
+                    {activeMedia.latitude && activeMedia.longitude ? (
+                      <span className="text-teal-400">GPS: {activeMedia.latitude.toFixed(4)}, {activeMedia.longitude.toFixed(4)}</span>
+                    ) : (
+                      <span className="text-amber-400/70">No GPS</span>
+                    )}
+                    <span className="text-white/30">
+                      {lightboxIndex! + 1} / {filtered.length}
                     </span>
-                  )}
+                    {saveError && <p className="text-red-400 text-[11px] mt-1">{saveError}</p>}
+                  </div>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    {/* Bug 8 — Edit button */}
+                    <button
+                      onClick={() => { setEditMode(true); setConfirmDelete(false); }}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white/80 text-xs font-semibold hover:bg-white/20 transition-all"
+                    >
+                      ✏️ Edit
+                    </button>
+                    {/* Bug 8 — Delete button */}
+                    {!confirmDelete ? (
+                      <button
+                        onClick={() => setConfirmDelete(true)}
+                        className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold hover:bg-red-500/20 transition-all"
+                      >
+                        🗑️ Delete
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-red-400 text-[10px] text-center">Sure?</p>
+                        <button onClick={handleDelete} disabled={deleting} className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-400 disabled:opacity-50 transition-all">
+                          {deleting ? "..." : "Yes"}
+                        </button>
+                        <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 rounded-lg bg-white/10 text-white/60 text-xs hover:bg-white/20 transition-all">
+                          No
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {activeMedia.caption && (
-                  <p className="text-white font-sans text-sm mt-0.5">{activeMedia.caption}</p>
-                )}
-                {activeMedia.taken_at && (
-                  <span className="text-white/50 text-[11px]">
-                    {new Date(activeMedia.taken_at).toLocaleString()}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex flex-col items-end gap-1 shrink-0 ml-4">
-                {activeMedia.latitude && activeMedia.longitude ? (
-                  <>
-                    <span className="text-teal-400">GPS Locked</span>
-                    <span>{activeMedia.latitude.toFixed(4)}, {activeMedia.longitude.toFixed(4)}</span>
-                  </>
-                ) : (
-                  <span className="text-amber-400/70">No GPS</span>
-                )}
-                <span className="text-white/30">
-                  {lightboxIndex! + 1} / {filtered.length}
-                </span>
-              </div>
+              ) : (
+                /* Edit mode */
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white text-xs font-bold">Edit</span>
+                    <button onClick={() => setEditMode(false)} className="text-white/40 hover:text-white text-xs">Cancel</button>
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-[10px] block mb-1">Caption</label>
+                    <input type="text" value={editCaption} onChange={(e) => setEditCaption(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:border-amber-500/50 outline-none transition-all placeholder:text-white/30"
+                      placeholder="Add a caption..."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-[10px] block mb-1">📅 Date Taken</label>
+                    <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs focus:border-amber-500/50 outline-none transition-all"
+                    />
+                  </div>
+                  {saveError && <p className="text-red-400 text-[10px]">{saveError}</p>}
+                  <button onClick={handleSave} disabled={saving}
+                    className="w-full py-1.5 rounded-lg bg-amber-500 text-[#0a0e1a] font-bold text-xs hover:bg-amber-400 transition-all disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 

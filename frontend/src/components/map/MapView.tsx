@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { MapData } from "@/types";
-import { getThumbnailUrl } from "@/lib/api";
+import type { MapData, MediaItem } from "@/types";
+import { getThumbnailUrl, getMediaUrl } from "@/lib/api";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -19,6 +19,7 @@ interface MapViewProps {
   onStopClick?: (stopId: string) => void;
   activeStopIndex?: number;
   className?: string;
+  mediaMarkers?: MediaItem[];  // Bug 12: geotagged photos to show as map pins
 }
 
 export default function MapView({
@@ -30,6 +31,7 @@ export default function MapView({
   onStopClick,
   activeStopIndex,
   className = "",
+  mediaMarkers = [],
 }: MapViewProps) {
   // Two separate refs:
   //   wrapperRef → our outer React div (safe to use, position:relative)
@@ -39,11 +41,14 @@ export default function MapView({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const innerMarkersRef = useRef<HTMLDivElement[]>([]);
   const mapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const mediaMapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);  // Bug 12
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const spinAnimRef = useRef<number | null>(null);
   const isInteractingRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [currentStyle, setCurrentStyle] = useState("");
+  // Bug 12 — lightbox for clicked media marker
+  const [mediaLightbox, setMediaLightbox] = useState<MediaItem | null>(null);
 
   const normalStyle = "mapbox://styles/mapbox/outdoors-v12";
   const heatmapStyle = "mapbox://styles/mapbox/dark-v11";
@@ -474,6 +479,82 @@ export default function MapView({
     });
   }, [activeStopIndex, mapData]);
 
+  // Bug 12 — render photo markers on the map whenever mediaMarkers or mapLoaded changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    // Clear old media markers
+    mediaMapboxMarkersRef.current.forEach((m) => m.remove());
+    mediaMapboxMarkersRef.current = [];
+
+    mediaMarkers.forEach((item) => {
+      if (item.latitude == null || item.longitude == null) return;
+
+      const el = document.createElement("div");
+      el.style.cssText = `
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+
+      const inner = document.createElement("div");
+      const thumbUrl = getThumbnailUrl(item.thumbnail_path ?? null, item.file_path);
+      inner.style.cssText = `
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: url('${thumbUrl}') center/cover no-repeat, #f59e0b;
+        border: 2px solid #f59e0b;
+        cursor: pointer;
+        box-shadow: 0 0 8px rgba(245,158,11,0.5);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        box-sizing: border-box;
+        flex-shrink: 0;
+      `;
+      el.appendChild(inner);
+
+      inner.addEventListener("mouseenter", () => {
+        inner.style.transform = "scale(1.4)";
+        inner.style.boxShadow = "0 0 16px rgba(245,158,11,0.9)";
+        const tip = tooltipRef.current;
+        const wrapper = wrapperRef.current;
+        if (!tip || !wrapper) return;
+        const innerRect = inner.getBoundingClientRect();
+        const wRect = wrapper.getBoundingClientRect();
+        tip.innerHTML = `
+          <div style="font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:4px;">📷 Photo</div>
+          <div style="width:80px;height:60px;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);">
+            <img src="${thumbUrl}" style="width:100%;height:100%;object-fit:cover;" />
+          </div>
+          ${item.caption ? `<div style="font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.caption}</div>` : ""}
+        `;
+        tip.style.opacity = "1";
+        tip.style.left = `${innerRect.left - wRect.left + innerRect.width / 2}px`;
+        tip.style.top = `${innerRect.top - wRect.top}px`;
+      });
+
+      inner.addEventListener("mouseleave", () => {
+        inner.style.transform = "scale(1)";
+        inner.style.boxShadow = "0 0 8px rgba(245,158,11,0.5)";
+        if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
+      });
+
+      inner.addEventListener("click", () => {
+        if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
+        setMediaLightbox(item);
+      });
+
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+        .setLngLat([item.longitude!, item.latitude!])
+        .addTo(map);
+
+      mediaMapboxMarkersRef.current.push(marker);
+    });
+  }, [mediaMarkers, mapLoaded]);
+
   return (
     <div ref={wrapperRef} className={`relative w-full h-full ${className}`}>
       {/* Mapbox mounts here — we never add children or change styles on this div */}
@@ -481,6 +562,35 @@ export default function MapView({
       {!mapLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-bg)] rounded-2xl pointer-events-none">
           <p className="text-[var(--color-text-secondary)] text-sm animate-pulse">Loading map...</p>
+        </div>
+      )}
+
+      {/* Bug 12 — Photo lightbox triggered by media marker click */}
+      {mediaLightbox && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in"
+          onClick={() => setMediaLightbox(null)}
+        >
+          <button
+            onClick={() => setMediaLightbox(null)}
+            className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors text-4xl z-50"
+          >
+            &times;
+          </button>
+          <div className="relative max-w-2xl w-full px-8" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={getMediaUrl(mediaLightbox.file_path)}
+              alt={mediaLightbox.caption || ""}
+              className="max-w-full max-h-[75vh] rounded-xl shadow-2xl object-contain mx-auto block"
+            />
+            <div className="mt-3 bg-black/60 border border-white/10 rounded-xl p-3 text-xs font-mono text-white/70 flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                {mediaLightbox.caption && <p className="text-white text-sm font-sans font-medium m-0">{mediaLightbox.caption}</p>}
+                {mediaLightbox.taken_at && <span>📅 {new Date(mediaLightbox.taken_at).toLocaleDateString()}</span>}
+                {mediaLightbox.latitude && <span className="text-teal-400">📍 {mediaLightbox.latitude.toFixed(4)}, {mediaLightbox.longitude?.toFixed(4)}</span>}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
