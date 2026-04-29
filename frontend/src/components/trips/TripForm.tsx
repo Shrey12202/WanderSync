@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createTrip, createDay, createStop } from "@/lib/api";
 import type { CreateTripRequest } from "@/types";
@@ -18,6 +18,7 @@ export default function TripForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const sessionTokenRef = useRef(crypto.randomUUID());
   const [form, setForm] = useState<CreateTripRequest>({
     title: "",
     description: "",
@@ -35,9 +36,9 @@ export default function TripForm() {
       const fetchPlaces = async () => {
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`);
+          const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(searchQuery)}&session_token=${sessionTokenRef.current}&access_token=${token}`);
           const data = await res.json();
-          if (data.features) setSuggestions(data.features);
+          if (data.suggestions) setSuggestions(data.suggestions);
         } catch (e) {
           console.error("Geocoding error:", e);
         }
@@ -233,23 +234,35 @@ export default function TripForm() {
           />
           {suggestions.length > 0 && (
             <ul className="absolute bottom-full mb-1 z-10 w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg max-h-48 overflow-y-auto shadow-xl custom-scrollbar left-0">
-              {suggestions.map((feature, i) => (
+              {suggestions.map((suggestion, i) => (
                 <li
                   key={i}
                   className="px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer truncate transition-colors"
-                  onClick={() => {
-                    setStops([...stops, {
-                      name: feature.properties.name || feature.properties.place_formatted,
-                      longitude: feature.geometry.coordinates[0],
-                      latitude: feature.geometry.coordinates[1],
-                    }]);
-                    setSearchQuery("");
-                    setSuggestions([]);
+                  onClick={async () => {
+                    try {
+                      const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+                      const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=${sessionTokenRef.current}&access_token=${token}`);
+                      const data = await res.json();
+                      if (data.features && data.features.length > 0) {
+                        const feature = data.features[0];
+                        setStops([...stops, {
+                          name: suggestion.name || feature.properties.name || suggestion.full_address,
+                          longitude: feature.geometry.coordinates[0],
+                          latitude: feature.geometry.coordinates[1],
+                        }]);
+                        setSearchQuery("");
+                        setSuggestions([]);
+                        // Reset session token after successful retrieval
+                        sessionTokenRef.current = crypto.randomUUID();
+                      }
+                    } catch (e) {
+                      console.error("Retrieve error:", e);
+                    }
                   }}
                 >
-                  <span className="font-medium block truncate">{feature.properties.name || feature.properties.full_address}</span>
+                  <span className="font-medium block truncate">{suggestion.name || suggestion.full_address}</span>
                   <span className="block text-[10px] text-[var(--color-text-secondary)] mt-0.5 truncate">
-                    {feature.properties.full_address || feature.properties.place_formatted}
+                    {suggestion.full_address || suggestion.place_formatted}
                   </span>
                 </li>
               ))}

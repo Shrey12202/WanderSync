@@ -81,10 +81,10 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
           const res = await fetch(
-            `https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(editSearch)}&limit=10&access_token=${token}`
+            `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(editSearch)}&session_token=media-gallery-session&access_token=${token}`
           );
           const data = await res.json();
-          if (data.features) setEditSuggestions(data.features);
+          if (data.suggestions) setEditSuggestions(data.suggestions);
         } catch { /* silent */ }
       };
       const t = setTimeout(fetch_, 500);
@@ -354,20 +354,30 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
                     />
                     {editSuggestions.length > 0 && (
                       <ul className="absolute z-20 w-full mt-1 bg-[#1a1f35] border border-white/10 rounded-lg max-h-36 overflow-y-auto shadow-2xl">
-                        {editSuggestions.map((f, i) => (
+                        {editSuggestions.map((suggestion, i) => (
                           <li
                             key={i}
                             className="px-3 py-1.5 text-xs text-white/80 hover:bg-white/10 cursor-pointer"
-                            onClick={() => {
-                              setEditSearch(f.properties.name || f.properties.full_address || "");
-                              setEditLng(String(f.geometry.coordinates[0]));
-                              setEditLat(String(f.geometry.coordinates[1]));
-                              setEditSuggestions([]);
+                            onClick={async () => {
+                              try {
+                                const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+                                const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=media-gallery-session&access_token=${token}`);
+                                const data = await res.json();
+                                if (data.features && data.features.length > 0) {
+                                  const feature = data.features[0];
+                                  setEditSearch(suggestion.name || feature.properties.name || suggestion.full_address || "");
+                                  setEditLng(String(feature.geometry.coordinates[0]));
+                                  setEditLat(String(feature.geometry.coordinates[1]));
+                                  setEditSuggestions([]);
+                                }
+                              } catch (err) {
+                                console.error("Retrieve error:", err);
+                              }
                             }}
                           >
-                            <span className="font-medium block truncate">{f.properties.name || f.properties.full_address}</span>
+                            <span className="font-medium block truncate">{suggestion.name || suggestion.full_address}</span>
                             <span className="block text-[10px] text-white/40 mt-0.5 truncate">
-                              {f.properties.full_address || f.properties.place_formatted}
+                              {suggestion.full_address || suggestion.place_formatted}
                             </span>
                           </li>
                         ))}

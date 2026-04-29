@@ -73,10 +73,10 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
           const res = await fetch(
-            `https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`
+            `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(searchQuery)}&session_token=upload-session&access_token=${token}`
           );
           const data = await res.json();
-          if (data.features) setSuggestions(data.features);
+          if (data.suggestions) setSuggestions(data.suggestions);
         } catch (e) {
           console.error("Geocoding error:", e);
         }
@@ -283,37 +283,52 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
             onKeyDown={(e) => {
               if (e.key === "Enter" && suggestions.length > 0) {
                 e.preventDefault();
-                const feature = suggestions[0];
-                skipGeocodingRef.current = true;
-                setSearchQuery(feature.properties.name || feature.properties.full_address);
-                setOverrideLng(String(feature.geometry.coordinates[0]));
-                setOverrideLat(String(feature.geometry.coordinates[1]));
-                setSuggestions([]);
+                const suggestion = suggestions[0];
+                const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+                fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=upload-session&access_token=${token}`)
+                  .then(r => r.json())
+                  .then(data => {
+                    if (data.features && data.features.length > 0) {
+                      const feature = data.features[0];
+                      skipGeocodingRef.current = true;
+                      setSearchQuery(suggestion.name || feature.properties.name || suggestion.full_address);
+                      setOverrideLng(String(feature.geometry.coordinates[0]));
+                      setOverrideLat(String(feature.geometry.coordinates[1]));
+                      setSuggestions([]);
+                    }
+                  }).catch(console.error);
               }
             }}
           />
           {suggestions.length > 0 && (
             <ul className="absolute z-20 w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl max-h-44 overflow-y-auto shadow-2xl">
-              {suggestions.map((feature, i) => (
+              {suggestions.map((suggestion, i) => (
                 <li
                   key={i}
                   className="px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                  onMouseDown={(e) => {
-                    // Use onMouseDown (not onClick) to fire before input blur
+                  onMouseDown={async (e) => {
                     e.preventDefault();
-                    skipGeocodingRef.current = true;
-                    setSearchQuery(feature.properties.name || feature.properties.full_address);
-                    setOverrideLng(String(feature.geometry.coordinates[0]));
-                    setOverrideLat(String(feature.geometry.coordinates[1]));
-                    setSuggestions([]);
-                    // If they manually searched a location, disconnect it from the active stop
-                    // so it becomes a standalone trip photo.
-                    setSelectedExistingStopId("none");
+                    try {
+                      const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+                      const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=upload-session&access_token=${token}`);
+                      const data = await res.json();
+                      if (data.features && data.features.length > 0) {
+                        const feature = data.features[0];
+                        skipGeocodingRef.current = true;
+                        setSearchQuery(suggestion.name || feature.properties.name || suggestion.full_address);
+                        setOverrideLng(String(feature.geometry.coordinates[0]));
+                        setOverrideLat(String(feature.geometry.coordinates[1]));
+                        setSuggestions([]);
+                        setSelectedExistingStopId("none");
+                      }
+                    } catch (err) {
+                      console.error("Retrieve error:", err);
+                    }
                   }}
                 >
-                  <span className="font-medium block truncate">{feature.properties.name || feature.properties.full_address}</span>
+                  <span className="font-medium block truncate">{suggestion.name || suggestion.full_address}</span>
                   <span className="block text-[10px] text-[var(--color-text-secondary)] mt-0.5 truncate">
-                    {feature.properties.full_address || feature.properties.place_formatted}
+                    {suggestion.full_address || suggestion.place_formatted}
                   </span>
                 </li>
               ))}
