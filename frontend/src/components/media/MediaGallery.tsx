@@ -81,7 +81,7 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
           const res = await fetch(
-            `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(editSearch)}&types=poi,place,locality,neighborhood,address&limit=10&access_token=${token}`
+            `https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(editSearch)}&limit=10&access_token=${token}`
           );
           const data = await res.json();
           if (data.features) setEditSuggestions(data.features);
@@ -350,7 +350,7 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
                       className={inputClass}
                       value={editSearch}
                       onChange={(e) => setEditSearch(e.target.value)}
-                      placeholder="Search a place..."
+                      placeholder="Search for a specific place, business, or city..."
                     />
                     {editSuggestions.length > 0 && (
                       <ul className="absolute z-20 w-full mt-1 bg-[#1a1f35] border border-white/10 rounded-lg max-h-36 overflow-y-auto shadow-2xl">

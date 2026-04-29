@@ -110,7 +110,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
           const res = await fetch(
-            `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(addForm.stopName)}&limit=10&access_token=${token}`
+            `https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(addForm.stopName)}&limit=10&access_token=${token}`
           );
           const data = await res.json();
           if (data.features) setSuggestions(data.features);
@@ -315,7 +315,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   <input
                     type="text"
                     className={inputClass}
-                    placeholder="e.g., Eiffel Tower"
+                    placeholder="e.g., Starbucks, Eiffel Tower, or 123 Main St"
                     value={addForm.stopName}
                     onChange={(e) => {
                       setAddForm({ ...addForm, stopName: e.target.value });

@@ -35,7 +35,7 @@ export default function TripForm() {
       const fetchPlaces = async () => {
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(`https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`);
+          const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`);
           const data = await res.json();
           if (data.features) setSuggestions(data.features);
         } catch (e) {
@@ -227,7 +227,7 @@ export default function TripForm() {
           <input
             type="text"
             className={`${inputClass} !border-amber-500/30 placeholder:text-amber-500/40`}
-            placeholder="Search a city to add to itinerary..."
+            placeholder="Search for a specific place, business, or city..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

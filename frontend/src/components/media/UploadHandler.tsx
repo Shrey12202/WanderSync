@@ -73,7 +73,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
         try {
           const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
           const res = await fetch(
-            `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`
+            `https://api.mapbox.com/search/searchbox/v1/forward?q=${encodeURIComponent(searchQuery)}&limit=10&access_token=${token}`
           );
           const data = await res.json();
           if (data.features) setSuggestions(data.features);
@@ -274,7 +274,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
           <input
             type="text"
             className={`${inputClass} ${!hasLat || !hasLng ? "border-amber-500/40" : "border-teal-500/40"}`}
-            placeholder="Search city, landmark, or address..."
+            placeholder="Search for a specific place, business, or city..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
