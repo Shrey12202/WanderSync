@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { getAllMedia, getMediaUrl, getThumbnailUrl, deleteMedia, updateMedia } from "@/lib/api";
 import type { MediaWithContext } from "@/types";
+import UploadHandler from "@/components/media/UploadHandler";
+import Link from "next/link";
 
 export default function PhotosPage() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -11,6 +13,7 @@ export default function PhotosPage() {
   const [loading, setLoading] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [filter, setFilter] = useState<"all" | "image" | "video">("all");
+  const [showUploadModal, setShowUploadModal] = useState(false);
   // Bug 8 — edit + delete state for Photos lightbox
   const [editMode, setEditMode] = useState(false);
   const [editCaption, setEditCaption] = useState("");
@@ -156,6 +159,22 @@ export default function PhotosPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap items-center gap-3 mb-8">
+        <button
+          onClick={() => setShowUploadModal(true)}
+          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 text-white font-bold text-sm hover:from-teal-400 hover:to-teal-500 transition-all shadow-lg shadow-teal-500/20 flex items-center gap-2"
+        >
+          <span>📤</span> Upload New Media
+        </button>
+        <Link
+          href="/exif-viewer"
+          className="px-5 py-2.5 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] font-semibold text-sm hover:bg-[var(--color-surface-hover)] transition-all flex items-center gap-2 no-underline"
+        >
+          <span>🔍</span> EXIF Analyzer
+        </Link>
       </div>
 
       {/* Gallery Grid */}
@@ -369,6 +388,31 @@ export default function PhotosPage() {
           >
             &#8250;
           </button>
+        </div>
+      )}
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+              <h3 className="text-lg font-bold m-0">Upload Standalone Media</h3>
+              <button 
+                onClick={() => setShowUploadModal(false)}
+                className="text-[var(--color-text-secondary)] hover:text-white transition-colors p-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+              <UploadHandler
+                onUploadComplete={() => {
+                  reloadMedia();
+                  setShowUploadModal(false);
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

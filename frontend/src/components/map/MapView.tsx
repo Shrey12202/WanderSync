@@ -5,6 +5,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MapData, MediaItem } from "@/types";
 import { getThumbnailUrl, getMediaUrl } from "@/lib/api";
+import StopSlideshowModal from "@/components/media/StopSlideshowModal";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -47,8 +48,8 @@ export default function MapView({
   const isInteractingRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [currentStyle, setCurrentStyle] = useState("");
-  // Bug 12 — lightbox for clicked media marker
-  const [mediaLightbox, setMediaLightbox] = useState<MediaItem | null>(null);
+  // Bug 12 & Feature — lightbox for clicked media marker cluster
+  const [mediaLightbox, setMediaLightbox] = useState<{stopName: string, items: MediaItem[]} | null>(null);
 
   const normalStyle = "mapbox://styles/mapbox/outdoors-v12";
   const heatmapStyle = "mapbox://styles/mapbox/dark-v11";
@@ -107,6 +108,39 @@ export default function MapView({
 
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
+    class ResetZoomControl {
+      _map: mapboxgl.Map | undefined;
+      _container: HTMLDivElement | undefined;
+
+      onAdd(map: mapboxgl.Map) {
+        this._map = map;
+        this._container = document.createElement('div');
+        this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
+        const button = document.createElement('button');
+        button.className = 'mapboxgl-ctrl-icon';
+        button.type = 'button';
+        button.title = 'Reset Zoom & Spin';
+        // Classic refresh icon SVG
+        button.innerHTML = '<svg style="width:16px;height:16px;fill:#333;margin:auto" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>';
+        button.style.display = 'flex';
+        button.style.alignItems = 'center';
+        button.style.justifyContent = 'center';
+        button.onclick = () => {
+          map.flyTo({ zoom: spinGlobe ? 1.5 : 2, pitch: 0, bearing: 0, duration: 1500 });
+        };
+        this._container.appendChild(button);
+        return this._container;
+      }
+      onRemove() {
+        if (this._container && this._container.parentNode) {
+          this._container.parentNode.removeChild(this._container);
+        }
+        this._map = undefined;
+      }
+    }
+
+    map.addControl(new ResetZoomControl(), "top-right");
+
     map.on("load", () => {
       setMapLoaded(true);
       setCurrentStyle(initialStyle);
@@ -116,9 +150,19 @@ export default function MapView({
         map.setFog({
           color: "rgb(5, 10, 25)",
           "high-color": "rgb(40, 80, 140)",
-          "horizon-blend": 0.04,
+          "horizon-blend": 0.2,
           "space-color": "rgb(5, 5, 15)",
           "star-intensity": 0.6,
+        });
+      }
+
+      // Hide country and place labels when fully zoomed out
+      const style = map.getStyle();
+      if (style && style.layers) {
+        style.layers.forEach((layer: any) => {
+          if (layer.id.includes('country-label') || layer.id.includes('place-') || layer.id.includes('state-label')) {
+            map.setLayerZoomRange(layer.id, 4, 24);
+          }
         });
       }
     });
@@ -390,7 +434,7 @@ export default function MapView({
       // anchor:"center" places the center of `el` at the coordinate.
       // Mapbox will write translate(Xpx, Ypx) translate(-50%,-50%) to el.style.transform.
       // We never touch el.style.transform ourselves.
-      const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center", pitchAlignment: "map" })
         .setLngLat(coords)
         .addTo(map);
 
@@ -479,7 +523,7 @@ export default function MapView({
     });
   }, [activeStopIndex, mapData]);
 
-  // Bug 12 — render photo markers on the map whenever mediaMarkers or mapLoaded changes
+  // Bug 12 & Feature — render clustered photo markers on the map
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
@@ -487,10 +531,23 @@ export default function MapView({
     // Clear old media markers
     mediaMapboxMarkersRef.current.forEach((m) => m.remove());
     mediaMapboxMarkersRef.current = [];
+    const intervals: NodeJS.Timeout[] = [];
 
+    // Cluster photos within ~110 meters (0.001 degrees)
+    const clusters: { lat: number; lng: number; items: typeof mediaMarkers }[] = [];
     mediaMarkers.forEach((item) => {
       if (item.latitude == null || item.longitude == null) return;
+      const existing = clusters.find(
+        (c) => Math.abs(c.lat - item.latitude!) < 0.001 && Math.abs(c.lng - item.longitude!) < 0.001
+      );
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        clusters.push({ lat: item.latitude, lng: item.longitude, items: [item] });
+      }
+    });
 
+    clusters.forEach((cluster) => {
       const el = document.createElement("div");
       el.style.cssText = `
         width: 24px;
@@ -501,42 +558,95 @@ export default function MapView({
       `;
 
       const inner = document.createElement("div");
-      const thumbUrl = getThumbnailUrl(item.thumbnail_path ?? null, item.file_path);
+      let currentIndex = 0;
+      const getUrl = (idx: number) => getThumbnailUrl(cluster.items[idx].thumbnail_path ?? null, cluster.items[idx].file_path);
+      
       inner.style.cssText = `
         width: 24px;
         height: 24px;
         border-radius: 50%;
-        background: url('${thumbUrl}') center/cover no-repeat, #f59e0b;
+        background: url('${getUrl(0)}') center/cover no-repeat, #f59e0b;
         border: 2px solid #f59e0b;
         cursor: pointer;
         box-shadow: 0 0 8px rgba(245,158,11,0.5);
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, background-image 0.5s ease-in-out;
         box-sizing: border-box;
         flex-shrink: 0;
       `;
+      
+      // Add cluster count badge if > 1
+      if (cluster.items.length > 1) {
+        const badge = document.createElement("div");
+        badge.style.cssText = `
+          position: absolute;
+          top: -6px;
+          right: -6px;
+          background: #ef4444;
+          color: white;
+          font-size: 9px;
+          font-weight: bold;
+          border-radius: 10px;
+          padding: 1px 4px;
+          border: 1px solid rgba(0,0,0,0.2);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          pointer-events: none;
+        `;
+        badge.textContent = String(cluster.items.length);
+        el.appendChild(badge);
+        
+        // Rotate image every 3 seconds
+        const intervalId = setInterval(() => {
+          currentIndex = (currentIndex + 1) % cluster.items.length;
+          inner.style.backgroundImage = `url('${getUrl(currentIndex)}'), linear-gradient(#f59e0b, #f59e0b)`;
+        }, 3000);
+        intervals.push(intervalId);
+      }
+
       el.appendChild(inner);
 
-      inner.addEventListener("mouseenter", () => {
-        inner.style.transform = "scale(1.4)";
-        inner.style.boxShadow = "0 0 16px rgba(245,158,11,0.9)";
+      const updateTooltip = () => {
         const tip = tooltipRef.current;
         const wrapper = wrapperRef.current;
         if (!tip || !wrapper) return;
         const innerRect = inner.getBoundingClientRect();
         const wRect = wrapper.getBoundingClientRect();
+        const currentItem = cluster.items[currentIndex];
+        
         tip.innerHTML = `
-          <div style="font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:4px;">📷 Photo</div>
-          <div style="width:80px;height:60px;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);">
-            <img src="${thumbUrl}" style="width:100%;height:100%;object-fit:cover;" />
+          <div style="font-size:11px;font-weight:700;color:#fbbf24;margin-bottom:4px;">
+            📷 Photo ${cluster.items.length > 1 ? `(${currentIndex + 1}/${cluster.items.length})` : ''}
           </div>
-          ${item.caption ? `<div style="font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.caption}</div>` : ""}
+          <div style="width:80px;height:60px;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);">
+            <img src="${getUrl(currentIndex)}" style="width:100%;height:100%;object-fit:cover;" />
+          </div>
+          ${currentItem.caption ? `<div style="font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${currentItem.caption}</div>` : ""}
         `;
         tip.style.opacity = "1";
         tip.style.left = `${innerRect.left - wRect.left + innerRect.width / 2}px`;
         tip.style.top = `${innerRect.top - wRect.top}px`;
+      };
+
+      inner.addEventListener("mouseenter", () => {
+        inner.style.transform = "scale(1.4)";
+        inner.style.boxShadow = "0 0 16px rgba(245,158,11,0.9)";
+        updateTooltip();
+        
+        // Also update tooltip continuously while hovering if it rotates
+        if (cluster.items.length > 1) {
+          inner.dataset.hovering = "true";
+        }
       });
 
+      // To keep tooltip in sync when interval fires
+      if (cluster.items.length > 1) {
+        const hoverInterval = setInterval(() => {
+          if (inner.dataset.hovering === "true") updateTooltip();
+        }, 3000);
+        intervals.push(hoverInterval);
+      }
+
       inner.addEventListener("mouseleave", () => {
+        inner.dataset.hovering = "false";
         inner.style.transform = "scale(1)";
         inner.style.boxShadow = "0 0 8px rgba(245,158,11,0.5)";
         if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
@@ -544,15 +654,21 @@ export default function MapView({
 
       inner.addEventListener("click", () => {
         if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
-        setMediaLightbox(item);
+        // Show all items in the cluster
+        setMediaLightbox({
+          stopName: "Location Photos",
+          items: cluster.items
+        });
       });
 
-      const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
-        .setLngLat([item.longitude!, item.latitude!])
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center", pitchAlignment: "map" })
+        .setLngLat([cluster.lng, cluster.lat])
         .addTo(map);
 
       mediaMapboxMarkersRef.current.push(marker);
     });
+    
+    return () => intervals.forEach(clearInterval);
   }, [mediaMarkers, mapLoaded]);
 
   return (
@@ -565,33 +681,13 @@ export default function MapView({
         </div>
       )}
 
-      {/* Bug 12 — Photo lightbox triggered by media marker click */}
+      {/* Bug 12 & Feature — Photo lightbox triggered by media marker click */}
       {mediaLightbox && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in"
-          onClick={() => setMediaLightbox(null)}
-        >
-          <button
-            onClick={() => setMediaLightbox(null)}
-            className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors text-4xl z-50"
-          >
-            &times;
-          </button>
-          <div className="relative max-w-2xl w-full px-8" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={getMediaUrl(mediaLightbox.file_path)}
-              alt={mediaLightbox.caption || ""}
-              className="max-w-full max-h-[75vh] rounded-xl shadow-2xl object-contain mx-auto block"
-            />
-            <div className="mt-3 bg-black/60 border border-white/10 rounded-xl p-3 text-xs font-mono text-white/70 flex items-center justify-between">
-              <div className="flex flex-col gap-1">
-                {mediaLightbox.caption && <p className="text-white text-sm font-sans font-medium m-0">{mediaLightbox.caption}</p>}
-                {mediaLightbox.taken_at && <span>📅 {new Date(mediaLightbox.taken_at).toLocaleDateString()}</span>}
-                {mediaLightbox.latitude && <span className="text-teal-400">📍 {mediaLightbox.latitude.toFixed(4)}, {mediaLightbox.longitude?.toFixed(4)}</span>}
-              </div>
-            </div>
-          </div>
-        </div>
+        <StopSlideshowModal
+          stopName={mediaLightbox.stopName}
+          media={mediaLightbox.items}
+          onClose={() => setMediaLightbox(null)}
+        />
       )}
     </div>
   );

@@ -29,7 +29,8 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true);
   const [activeStopIndex, setActiveStopIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [activeTab, setActiveTab] = useState<"timeline" | "media" | "upload" | "add">("timeline");
+  const [activeTab, setActiveTab] = useState<"timeline" | "media" | "add">("timeline");
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [slideshowStop, setSlideshowStop] = useState<Stop | null>(null);
   const [tripMedia, setTripMedia] = useState<MediaItem[]>([]);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -242,7 +243,6 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             {[
               { key: "timeline", label: "Timeline", icon: "⏱" },
               { key: "media", label: "Media", icon: "📷" },
-              { key: "upload", label: "Upload", icon: "📤" },
               { key: "add", label: "Add Stop", icon: "📍" },
             ].map((tab) => (
               <button
@@ -285,19 +285,17 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             )}
 
             {activeTab === "media" && (
-              <MediaGallery media={allMedia} onMediaUpdate={() => loadTrip()} />
-            )}
-
-            {activeTab === "upload" && (
-              <UploadHandler
-                tripId={trip.id}
-                stopId={allStops[activeStopIndex]?.id}
-                defaultLat={allStops[activeStopIndex]?.latitude ?? undefined}
-                defaultLng={allStops[activeStopIndex]?.longitude ?? undefined}
-                tripStartDate={trip.start_date ?? undefined}
-                tripEndDate={trip.end_date ?? undefined}
-                onUploadComplete={() => loadTrip()}
-              />
+              <div className="flex flex-col h-full gap-4">
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="w-full py-3 rounded-xl border border-dashed border-teal-500/50 text-teal-400 hover:bg-teal-500/10 transition-colors flex items-center justify-center gap-2 font-medium text-sm shrink-0"
+                >
+                  <span>📤</span> Upload Media
+                </button>
+                <div className="flex-1 overflow-y-auto min-h-0">
+                  <MediaGallery media={allMedia} onMediaUpdate={() => loadTrip()} />
+                </div>
+              </div>
             )}
 
             {activeTab === "add" && (
@@ -410,14 +408,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             )}
           </div>
 
-          {/* Bug 11 — "Save & Exit" instead of "Finish & View on Map" */}
+          {/* Bug 11 — "Finish!!" instead of "Save & Exit" routes to / */}
           <div className="shrink-0 p-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
             <button
-              onClick={() => router.push("/trips")}
+              onClick={() => router.push("/")}
               className="w-full py-3 rounded-2xl font-bold text-sm transition-all bg-gradient-to-r from-amber-500 to-teal-500 text-[#0a0e1a] hover:from-amber-400 hover:to-teal-400 shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
             >
               <span>✓</span>
-              Save &amp; Exit
+              Finish!!
             </button>
           </div>
         </div>
@@ -430,6 +428,41 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           media={slideshowStop.media}
           onClose={() => setSlideshowStop(null)}
         />
+      )}
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+              <h3 className="text-lg font-bold m-0">Upload Media</h3>
+              <button 
+                onClick={() => setShowUploadModal(false)}
+                className="text-[var(--color-text-secondary)] hover:text-white transition-colors p-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+              <UploadHandler
+                tripId={trip.id}
+                stopId={allStops[activeStopIndex]?.id}
+                defaultLat={allStops[activeStopIndex]?.latitude ?? undefined}
+                defaultLng={allStops[activeStopIndex]?.longitude ?? undefined}
+                tripStartDate={trip.start_date ?? undefined}
+                tripEndDate={trip.end_date ?? undefined}
+                onUploadComplete={() => {
+                  loadTrip();
+                  setShowUploadModal(false);
+                }}
+                onStopSelected={(stopId) => {
+                  const idx = allStops.findIndex(s => s.id === stopId);
+                  if (idx >= 0) setActiveStopIndex(idx);
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

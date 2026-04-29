@@ -11,10 +11,11 @@ interface UploadHandlerProps {
   defaultLng?: number;
   tripStartDate?: string;         // Constrain date picker to trip range
   tripEndDate?: string;
-  onUploadComplete: (media: MediaItem) => void;
+  onUploadComplete?: (media: MediaItem) => void;
+  onStopSelected?: (stopId: string) => void;
 }
 
-export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, tripStartDate, tripEndDate, onUploadComplete }: UploadHandlerProps) {
+export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, tripStartDate, tripEndDate, onUploadComplete, onStopSelected }: UploadHandlerProps) {
   const [file, setFile] = useState<File | null>(null);
   const [step, setStep] = useState<"idle" | "analyzing" | "confirm" | "uploading">("idle");
   const [exif, setExif] = useState<ExifData | null>(null);
@@ -156,7 +157,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       setUploadSuccess(true);
       setTimeout(() => setUploadSuccess(false), 3000);
 
-      onUploadComplete(media);
+      onUploadComplete?.(media);
     } catch (err: any) {
       setError(err.message || "Failed to upload");
       setStep("confirm");
@@ -248,23 +249,26 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
           </div>
         )}
 
-        {/* Existing stop picker — Bug 13: hide "None" option when inside a trip */}
-        {tripStops.length > 0 && (
-          <div>
-            <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">📌 Attach to stop</label>
-            <select
-              className={inputClass}
-              value={selectedExistingStopId}
-              onChange={(e) => setSelectedExistingStopId(e.target.value)}
-            >
-              {/* Bug 13: only show standalone option when there is no tripId */}
-              {!tripId && <option value="none">— None (Standalone memory) —</option>}
-              {tripStops.map((stop) => (
-                <option key={stop.id} value={stop.id}>{stop.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
+        {/* Existing stop picker */}
+        <div>
+          <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">📌 Attach to stop</label>
+          <select
+            className={inputClass}
+            value={selectedExistingStopId}
+            onChange={(e) => {
+              setSelectedExistingStopId(e.target.value);
+              if (onStopSelected && e.target.value !== "none") {
+                onStopSelected(e.target.value);
+              }
+            }}
+            disabled={!tripId}
+          >
+            <option value="none">— None (Standalone memory) —</option>
+            {tripStops.map((stop) => (
+              <option key={stop.id} value={stop.id}>{stop.name}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Location search */}
         <div className="relative">
@@ -366,7 +370,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
             value={overrideDate}
             onChange={(e) => setOverrideDate(e.target.value)}
             min={tripStartDate || undefined}
-            max={tripEndDate || undefined}
+            max={new Date().toISOString().split("T")[0]}
           />
         </div>
 
