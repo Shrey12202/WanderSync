@@ -6,6 +6,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { getGeotaggedMedia, getThumbnailUrl } from "@/lib/api";
 import type { MediaWithContext } from "@/types";
+import StopSlideshowModal from "@/components/media/StopSlideshowModal";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -18,6 +19,7 @@ export default function MemoryWallPage() {
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const [mediaCount, setMediaCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [activeCluster, setActiveCluster] = useState<{stopName: string, items: MediaWithContext[]} | null>(null);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !mapContainer.current) return;
@@ -38,10 +40,24 @@ export default function MemoryWallPage() {
       map.setFog({
         color: "rgb(5, 10, 25)",
         "high-color": "rgb(30, 60, 120)",
-        "horizon-blend": 0.04,
+        "horizon-blend": 0.2,
         "space-color": "rgb(5, 5, 15)",
         "star-intensity": 0.7,
       });
+
+      // Hide country labels
+      const hideLabels = () => {
+        const style = map.getStyle();
+        if (style && style.layers) {
+          style.layers.forEach((layer: any) => {
+            if (layer.id.includes('country-label') || layer.id.includes('place-') || layer.id.includes('state-label') || layer.id.includes('settlement-')) {
+              try { map.setLayerZoomRange(layer.id, 4, 24); } catch(e){}
+            }
+          });
+        }
+      };
+      map.on('style.load', hideLabels);
+      hideLabels();
 
       // Fetch all geotagged media
       try {
@@ -54,6 +70,40 @@ export default function MemoryWallPage() {
         setLoading(false);
       }
     });
+
+    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+
+    class ResetZoomControl {
+      _map: mapboxgl.Map | undefined;
+      _container: HTMLDivElement | undefined;
+
+      onAdd(map: mapboxgl.Map) {
+        this._map = map;
+        this._container = document.createElement('div');
+        this._container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
+        const button = document.createElement('button');
+        button.className = 'mapboxgl-ctrl-icon';
+        button.type = 'button';
+        button.title = 'Reset Zoom & Spin';
+        button.innerHTML = '<svg style="width:16px;height:16px;fill:#333;margin:auto" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>';
+        button.style.display = 'flex';
+        button.style.alignItems = 'center';
+        button.style.justifyContent = 'center';
+        button.onclick = () => {
+          map.flyTo({ zoom: 1.5, pitch: 0, bearing: 0, duration: 1500 });
+        };
+        this._container.appendChild(button);
+        return this._container;
+      }
+      onRemove() {
+        if (this._container && this._container.parentNode) {
+          this._container.parentNode.removeChild(this._container);
+        }
+        this._map = undefined;
+      }
+    }
+
+    map.addControl(new ResetZoomControl(), "top-right");
 
     // Globe spin
     const BASE_ZOOM = 1.5;
@@ -106,7 +156,10 @@ export default function MemoryWallPage() {
       if (idleTimer) clearTimeout(idleTimer);
       document.removeEventListener("mousedown", resumeOnOutsideClick);
       document.removeEventListener("touchstart", resumeOnOutsideClick);
-      markersRef.current.forEach((m) => m.remove());
+      markersRef.current.forEach((m) => {
+        if ((m as any)._rotateInterval) clearInterval((m as any)._rotateInterval);
+        m.remove();
+      });
       markersRef.current = [];
       map.remove();
       mapRef.current = null;
@@ -162,13 +215,24 @@ export default function MemoryWallPage() {
 
       const img = document.createElement("img");
       img.src = firstThumb;
-      img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;";
+      img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;transition: opacity 0.5s ease-in-out;";
       img.onerror = () => {
         img.src = "";
         inner.style.background = "linear-gradient(135deg,#f59e0b33,#14b8a633)";
         inner.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;">🏔️</div>`;
       };
       inner.appendChild(img);
+
+      // Add rotation to base image
+      let rotateInterval: ReturnType<typeof setInterval> | null = null;
+      if (group.items.length > 1) {
+        let currentIdx = 0;
+        rotateInterval = setInterval(() => {
+          currentIdx = (currentIdx + 1) % group.items.length;
+          const url = getThumbnailUrl(group.items[currentIdx].thumbnail_path ?? null, group.items[currentIdx].file_path);
+          img.src = url;
+        }, 3000);
+      }
 
       // Multi-photo badge
       if (group.items.length > 1) {
@@ -199,51 +263,24 @@ export default function MemoryWallPage() {
         inner.style.boxShadow = "0 3px 16px rgba(0,0,0,0.6), 0 0 0 1px rgba(245,158,11,0.2)";
       });
 
-      // Build popup with auto-rotating images for multi-photo groups
-      const buildPopupHTML = (idx: number) => {
-        const it = group.items[idx];
-        const url = getThumbnailUrl(it.thumbnail_path ?? null, it.file_path);
-        const counter = group.items.length > 1 ? `<div style="position:absolute;top:6px;right:8px;background:rgba(0,0,0,0.7);color:#fbbf24;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;">${idx + 1}/${group.items.length}</div>` : "";
-        return `
-          <div style="background:#0d1117;border-radius:10px;overflow:hidden;font-family:Inter,sans-serif;position:relative;">
-            ${counter}
-            <img src="${url}" style="width:100%;max-height:120px;object-fit:cover;display:block;" />
-            <div style="padding:6px 8px;">
-              ${it.caption ? `<p style="color:#fff;font-size:11px;margin:0 0 2px;">${it.caption}</p>` : ""}
-              <p style="color:#f59e0b;font-size:10px;margin:0;">${it.trip_title || "Standalone"}</p>
-              ${it.taken_at ? `<p style="color:#6b7280;font-size:9px;margin:2px 0 0;">${new Date(it.taken_at).toLocaleDateString()}</p>` : ""}
-            </div>
-          </div>
-        `;
-      };
-
-      const popup = new mapboxgl.Popup({ offset: 8, closeButton: true, maxWidth: "180px" })
-        .setHTML(buildPopupHTML(0));
-
-      // Auto-rotate for multi-photo
-      if (group.items.length > 1) {
-        let currentIdx = 0;
-        let rotateInterval: ReturnType<typeof setInterval> | null = null;
-
-        popup.on("open", () => {
-          currentIdx = 0;
-          rotateInterval = setInterval(() => {
-            currentIdx = (currentIdx + 1) % group.items.length;
-            const el = popup.getElement()?.querySelector(".mapboxgl-popup-content");
-            if (el) el.innerHTML = buildPopupHTML(currentIdx);
-          }, 3000);
+      // Remove custom popup and use activeCluster React state instead
+      inner.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setActiveCluster({
+          stopName: "Location Photos",
+          items: group.items
         });
-
-        popup.on("close", () => {
-          if (rotateInterval) clearInterval(rotateInterval);
-        });
-      }
+      });
 
       const lngLat = new mapboxgl.LngLat(group.lng, group.lat);
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat(lngLat)
-        .setPopup(popup)
         .addTo(map);
+
+      // Attach interval to marker element so it can be cleaned up
+      if (rotateInterval) {
+        (marker as any)._rotateInterval = rotateInterval;
+      }
 
       markersRef.current.push(marker);
       markerEls.push({ el, lngLat });
@@ -315,6 +352,15 @@ export default function MemoryWallPage() {
       </div>
 
       <div ref={mapContainer} className="w-full h-full" />
+      
+      {/* Lightbox for clicked clusters */}
+      {activeCluster && (
+        <StopSlideshowModal
+          stopName={activeCluster.stopName}
+          media={activeCluster.items}
+          onClose={() => setActiveCluster(null)}
+        />
+      )}
     </div>
   );
 }

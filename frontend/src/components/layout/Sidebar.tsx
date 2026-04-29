@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { href: "/trips", label: "Dashboard", icon: "✈️" },
   { href: "/photos", label: "Media", icon: "📷" },
   { href: "/memories", label: "Memory Wall", icon: "🌍" },
-  { href: "/upload", label: "Upload", icon: "📤" },
 ];
 
 export default function Sidebar() {
