@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -26,9 +26,8 @@ export default function MemoryWallPage() {
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/dark-v11",
       center: [20, 30],
-      zoom: 1.5,
+      zoom: 1,
       projection: { name: "globe" } as any,
       antialias: true,
     });
@@ -45,19 +44,21 @@ export default function MemoryWallPage() {
         "star-intensity": 0.7,
       });
 
-      // Hide country labels
-      const hideLabels = () => {
+      // Hide country labels dynamically so it persists
+      const updateLabels = () => {
         const style = map.getStyle();
         if (style && style.layers) {
+          const isZoomedIn = map.getZoom() > 3.5;
           style.layers.forEach((layer: any) => {
             if (layer.id.includes('country-label') || layer.id.includes('place-') || layer.id.includes('state-label') || layer.id.includes('settlement-')) {
-              try { map.setLayerZoomRange(layer.id, 4, 24); } catch(e){}
+              try { map.setLayoutProperty(layer.id, 'visibility', isZoomedIn ? 'visible' : 'none'); } catch(e){}
             }
           });
         }
       };
-      map.on('style.load', hideLabels);
-      hideLabels();
+      map.on('style.load', updateLabels);
+      map.on('zoom', updateLabels);
+      updateLabels();
 
       // Fetch all geotagged media
       try {
@@ -90,7 +91,7 @@ export default function MemoryWallPage() {
         button.style.alignItems = 'center';
         button.style.justifyContent = 'center';
         button.onclick = () => {
-          map.flyTo({ zoom: 1.5, pitch: 0, bearing: 0, duration: 1500 });
+          map.flyTo({ zoom: 1, pitch: 0, bearing: 0, duration: 1500 });
         };
         this._container.appendChild(button);
         return this._container;
@@ -166,12 +167,18 @@ export default function MemoryWallPage() {
     };
   }, [isLoaded, isSignedIn]);
 
-  function placeMarkers(media: MediaWithContext[], map: mapboxgl.Map) {
-    markersRef.current.forEach((m) => m.remove());
+  const placeMarkers = useCallback((media: MediaWithContext[], map: mapboxgl.Map) => {
+    markersRef.current.forEach((m) => {
+      if ((m as any)._rotateInterval) clearInterval((m as any)._rotateInterval);
+      m.remove();
+    });
     markersRef.current = [];
 
-    // Group media by nearby GPS coordinates (within ~100m)
-    const GPS_THRESHOLD = 0.001;
+    // Dynamic zoom-based clustering
+    const zoom = map.getZoom();
+    // Increase threshold when zoomed out to group more. Decrease when zoomed in to separate.
+    // At zoom 1 -> threshold is 1.25 degrees. At zoom 10 -> threshold is ~0.002 degrees.
+    const GPS_THRESHOLD = 2.5 / Math.pow(2, zoom);
     const groups: { lng: number; lat: number; items: MediaWithContext[] }[] = [];
 
     media.forEach((item) => {
@@ -330,8 +337,18 @@ export default function MemoryWallPage() {
     map.on("move", updateOcclusion);
     map.on("zoom", updateOcclusion);
     map.on("render", updateOcclusion);
+    
+    // Re-cluster on zoom end
+    const onZoomEnd = () => {
+      placeMarkers(media, map);
+    };
+    map.on("zoomend", onZoomEnd);
+    
     updateOcclusion(); // initial check
-  }
+    
+    // Cleanup local listeners
+    (map as any)._onZoomEnd = onZoomEnd;
+  }, []);
 
   return (
     <div className="relative w-full h-screen overflow-hidden">

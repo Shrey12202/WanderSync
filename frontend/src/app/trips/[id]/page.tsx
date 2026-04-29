@@ -225,7 +225,6 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           <MapView
             mapData={mapData}
             activeStopIndex={activeStopIndex}
-            mediaMarkers={geotaggedMedia}
             onStopClick={(stopId) => {
               const idx = allStops.findIndex((s) => s.id === stopId);
               if (idx >= 0) setActiveStopIndex(idx);

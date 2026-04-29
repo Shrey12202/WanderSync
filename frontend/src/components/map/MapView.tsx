@@ -100,7 +100,7 @@ export default function MapView({
       container: canvasRef.current,
       style: initialStyle,
       center: [0, 20],
-      zoom: spinGlobe ? 1.5 : 2,
+      zoom: spinGlobe ? 1 : 2,
       pitch: 0,
       antialias: true,
       projection: spinGlobe ? { name: "globe" } : { name: "mercator" },
@@ -126,7 +126,7 @@ export default function MapView({
         button.style.alignItems = 'center';
         button.style.justifyContent = 'center';
         button.onclick = () => {
-          map.flyTo({ zoom: spinGlobe ? 1.5 : 2, pitch: 0, bearing: 0, duration: 1500 });
+          map.flyTo({ zoom: spinGlobe ? 1 : 2, pitch: 0, bearing: 0, duration: 1500 });
         };
         this._container.appendChild(button);
         return this._container;
@@ -156,21 +156,27 @@ export default function MapView({
         });
       }
 
-      // Hide country and place labels when fully zoomed out
-      const style = map.getStyle();
-      if (style && style.layers) {
-        style.layers.forEach((layer: any) => {
-          if (layer.id.includes('country-label') || layer.id.includes('place-') || layer.id.includes('state-label')) {
-            map.setLayerZoomRange(layer.id, 4, 24);
-          }
-        });
-      }
+      // Hide country labels dynamically so it persists
+      const updateLabels = () => {
+        const style = map.getStyle();
+        if (style && style.layers) {
+          const isZoomedIn = map.getZoom() > 3.5;
+          style.layers.forEach((layer: any) => {
+            if (layer.id.includes('country-label') || layer.id.includes('place-') || layer.id.includes('state-label') || layer.id.includes('settlement-')) {
+              try { map.setLayoutProperty(layer.id, 'visibility', isZoomedIn ? 'visible' : 'none'); } catch(e){}
+            }
+          });
+        }
+      };
+      map.on('style.load', updateLabels);
+      map.on('zoom', updateLabels);
+      updateLabels();
     });
 
     // ── Auto-spin globe ────────────────────────────────────────────────────
     if (spinGlobe) {
       const SPEED = 0.12;
-      const BASE_ZOOM = 1.5;
+      const BASE_ZOOM = 1;
       const ZOOM_THRESHOLD = 0.3;
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
