@@ -26,7 +26,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <TokenProvider />
-      <div className="flex flex-col-reverse md:flex-row h-[100dvh] overflow-hidden">
+      {/* Use lg breakpoint for desktop sidebar so phones (even landscape) keep bottom nav */}
+      <div className="flex flex-col-reverse lg:flex-row h-[100dvh] overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto relative">{children}</main>
       </div>

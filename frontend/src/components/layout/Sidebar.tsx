@@ -24,9 +24,9 @@ export default function Sidebar() {
   const initials = displayName[0]?.toUpperCase() ?? "T";
 
   return (
-    <aside className="w-full md:w-[280px] h-[64px] md:h-[100dvh] flex flex-row md:flex-col border-t md:border-t-0 md:border-r border-[var(--color-border)] bg-[var(--color-surface)] z-50 shrink-0">
+    <aside className="w-full lg:w-[280px] h-[64px] lg:h-[100dvh] flex flex-row lg:flex-col border-t lg:border-t-0 lg:border-r border-[var(--color-border)] bg-[var(--color-surface)] z-50 shrink-0">
       {/* Logo */}
-      <div className="hidden md:block p-6 border-b border-[var(--color-border)]">
+      <div className="hidden lg:block p-6 border-b border-[var(--color-border)]">
         <Link href="/" className="flex items-center gap-3 no-underline">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-teal-500 flex items-center justify-center text-xl">
             🌍
@@ -39,21 +39,21 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2 py-1 md:p-4 flex flex-row md:flex-col justify-around md:justify-start gap-1">
+      <nav className="flex-1 px-2 py-1 lg:p-4 flex flex-row lg:flex-col justify-around lg:justify-start gap-1">
         {NAV_ITEMS.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-3 px-2 py-1 md:px-4 md:py-3 rounded-xl font-medium no-underline transition-all duration-200 ${
+              className={`flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-1 lg:gap-3 px-2 py-1 lg:px-4 lg:py-3 rounded-xl font-medium no-underline transition-all duration-200 ${
                 isActive
-                  ? "text-amber-400 md:bg-amber-500/15 md:border border-amber-500/20"
+                  ? "text-amber-400 lg:bg-amber-500/15 lg:border border-amber-500/20"
                   : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] border border-transparent"
               }`}
             >
-              <span className="text-xl md:text-lg leading-none">{item.icon}</span>
-              <span className="text-[10px] md:text-sm">{item.label}</span>
+              <span className="text-xl lg:text-lg leading-none">{item.icon}</span>
+              <span className="text-[10px] lg:text-sm">{item.label}</span>
             </Link>
           );
         })}
@@ -79,7 +79,7 @@ export default function Sidebar() {
       </nav>
 
       {/* User Profile Footer (Desktop) */}
-      <div className="hidden md:block p-4 border-t border-[var(--color-border)]">
+      <div className="hidden lg:block p-4 border-t border-[var(--color-border)]">
         <Link
           href="/profile"
           className={`flex items-center gap-3 p-3 rounded-xl no-underline transition-all group ${

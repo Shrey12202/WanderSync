@@ -152,11 +152,32 @@ export default function MemoryWallPage() {
 
     animRef.current = requestAnimationFrame(spin);
 
+    // On mobile, viewport/browser chrome changes frequently. Ensure the map resizes
+    // so Marker positions stay aligned with their lng/lat.
+    const resize = () => {
+      try {
+        map.resize();
+      } catch {
+        // ignore resize errors during teardown
+      }
+    };
+    window.addEventListener("resize", resize);
+    window.addEventListener("orientationchange", resize);
+
+    let ro: ResizeObserver | null = null;
+    if (mapContainer.current && "ResizeObserver" in window) {
+      ro = new ResizeObserver(() => resize());
+      ro.observe(mapContainer.current);
+    }
+
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
       if (idleTimer) clearTimeout(idleTimer);
       document.removeEventListener("mousedown", resumeOnOutsideClick);
       document.removeEventListener("touchstart", resumeOnOutsideClick);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("orientationchange", resize);
+      if (ro) ro.disconnect();
       markersRef.current.forEach((m) => {
         if ((m as any)._rotateInterval) clearInterval((m as any)._rotateInterval);
         m.remove();
@@ -351,7 +372,7 @@ export default function MemoryWallPage() {
   }, []);
 
   return (
-    <div className="relative w-full h-[100dvh] overflow-hidden">
+    <div className="relative w-full h-full overflow-hidden">
       {/* Overlay */}
       <div className="absolute top-4 left-4 right-4 md:right-auto md:top-6 md:left-6 z-10 p-4 md:p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl md:max-w-xs pointer-events-none">
         <h1 className="text-xl md:text-2xl font-bold text-[var(--color-text)] m-0">🌍 Memory Wall</h1>
