@@ -35,7 +35,7 @@ export default function TripsDashboard() {
   return (
     <div className="p-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-[var(--color-text)] m-0">
             Trips Dashboard
@@ -53,7 +53,7 @@ export default function TripsDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         {[
           { label: "Trips", value: trips.length, icon: "✈️", color: "amber" },
           { label: "Stops", value: totalStops, icon: "📍", color: "teal" },

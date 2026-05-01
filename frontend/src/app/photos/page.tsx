@@ -127,7 +127,7 @@ export default function PhotosPage() {
   return (
     <div className="p-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-[var(--color-text)] m-0">
             Photos & Videos
@@ -138,7 +138,7 @@ export default function PhotosPage() {
         </div>
 
         {/* Stats */}
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 md:gap-3">
           {[
             { label: "All", value: media.length, key: "all" as const, icon: "🖼️" },
             { label: "Photos", value: imageCount, key: "image" as const, icon: "📷" },
@@ -179,7 +179,7 @@ export default function PhotosPage() {
 
       {/* Gallery Grid */}
       {loading ? (
-        <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+        <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
           {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
@@ -197,7 +197,7 @@ export default function PhotosPage() {
           </p>
         </div>
       ) : (
-        <div className="columns-2 md:columns-3 lg:columns-4 gap-3">
+        <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-3">
           {filtered.map((item, idx) => (
             <button
               key={item.id}
@@ -263,14 +263,14 @@ export default function PhotosPage() {
           {/* Left Arrow */}
           <button
             onClick={(e) => { e.stopPropagation(); showPrev(); }}
-            className="absolute left-4 p-4 text-white/50 hover:text-white transition-colors text-5xl z-50"
+            className="absolute left-1 md:left-4 p-2 md:p-4 text-white/50 hover:text-white transition-colors text-3xl md:text-5xl z-50"
           >
             &#8249;
           </button>
 
           {/* Content */}
           <div
-            className="relative max-w-5xl max-h-[85vh] w-full flex flex-col items-center justify-center px-16"
+            className="relative max-w-5xl max-h-[85vh] w-full flex flex-col items-center justify-center px-8 md:px-16"
             onClick={(e) => e.stopPropagation()}
           >
             {activeMedia.file_type === "image" ? (
@@ -289,9 +289,9 @@ export default function PhotosPage() {
             )}
 
             {/* Context Bar */}
-            <div className="w-full mt-4 text-white/80 font-mono text-xs bg-black/50 p-4 rounded-xl border border-white/10 backdrop-blur-sm">
+            <div className="w-full mt-4 text-white/80 font-mono text-xs bg-black/50 p-3 md:p-4 rounded-xl border border-white/10 backdrop-blur-sm max-h-[30vh] overflow-y-auto custom-scrollbar">
               {!editMode ? (
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-amber-400 font-sans font-semibold text-sm">
@@ -384,7 +384,7 @@ export default function PhotosPage() {
           {/* Right Arrow */}
           <button
             onClick={(e) => { e.stopPropagation(); showNext(); }}
-            className="absolute right-4 p-4 text-white/50 hover:text-white transition-colors text-5xl z-50"
+            className="absolute right-1 md:right-4 p-2 md:p-4 text-white/50 hover:text-white transition-colors text-3xl md:text-5xl z-50"
           >
             &#8250;
           </button>

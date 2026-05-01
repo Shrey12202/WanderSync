@@ -42,15 +42,15 @@ export default function HomeMap() {
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {/* Absolute Header Overlay */}
-      <div className="absolute top-6 left-6 z-10 p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl max-w-sm">
-        <h1 className="text-2xl font-bold text-[var(--color-text)] m-0">
+      <div className="absolute top-4 left-4 right-4 md:right-auto md:top-6 md:left-6 z-10 p-4 md:p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl md:max-w-sm">
+        <h1 className="text-xl md:text-2xl font-bold text-[var(--color-text)] m-0">
           WanderSync
         </h1>
         <p className="text-[var(--color-text-secondary)] mt-1 text-xs">
           Your global travel footprint
         </p>
 
-        <div className="mt-4 flex items-center gap-2 flex-wrap">
+        <div className="mt-3 md:mt-4 flex items-center gap-2 flex-wrap">
           {/* Globe / Flat Map toggle */}
           <button
             onClick={() => setIsGlobeView(!isGlobeView)}
