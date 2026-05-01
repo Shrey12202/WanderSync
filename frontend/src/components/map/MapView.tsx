@@ -497,16 +497,25 @@ export default function MapView({
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
     safeRemoveLayer(map, "global-paths-layer");
+    safeRemoveLayer(map, "global-paths-outline-layer");
     safeRemoveSource(map, "global-paths-source");
 
     if (globalPaths && globalPaths.features?.length > 0) {
       map.addSource("global-paths-source", { type: "geojson", data: globalPaths });
+      // Dark outline for contrast at low zoom
+      map.addLayer({
+        id: "global-paths-outline-layer",
+        type: "line",
+        source: "global-paths-source",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "rgba(0,0,0,0.55)", "line-width": 7, "line-opacity": 0.9, "line-blur": 0.5 },
+      });
       map.addLayer({
         id: "global-paths-layer",
         type: "line",
         source: "global-paths-source",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.8 },
+        paint: { "line-color": ["get", "color"], "line-width": 4.5, "line-opacity": 0.95 },
       });
     }
   }, [globalPaths, mapLoaded, safeRemoveLayer, safeRemoveSource]);

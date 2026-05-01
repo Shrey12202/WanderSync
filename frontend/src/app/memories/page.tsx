@@ -469,7 +469,7 @@ export default function MemoryWallPage() {
         </div>
         {!loading && (
           <p className="text-amber-400 text-xs mt-2 font-medium">
-            {mediaCount} {mediaCount === 1 ? "memory" : "memories"} pinned
+            {mediaCount} geotagged {mediaCount === 1 ? "item" : "items"} shown
           </p>
         )}
         {loading && (

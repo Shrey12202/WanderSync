@@ -19,7 +19,14 @@ export default function TripsDashboard() {
           getTrips(),
           getAllMedia().catch(() => []),
         ]);
-        setTrips(tripsData);
+        // Sort by trip date (start_date/end_date) rather than "last added"
+        setTrips(
+          [...tripsData].sort((a, b) => {
+            const aTime = Date.parse(a.start_date ?? a.end_date ?? a.created_at);
+            const bTime = Date.parse(b.start_date ?? b.end_date ?? b.created_at);
+            return (isNaN(bTime) ? 0 : bTime) - (isNaN(aTime) ? 0 : aTime);
+          })
+        );
         setTotalMediaCount(allMedia.length);
       } catch (err) {
         console.error("Failed to load dashboard:", err);

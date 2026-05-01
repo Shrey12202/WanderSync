@@ -156,7 +156,19 @@ async def get_global_paths(
             trip_paths[stop.trip_id] = []
         trip_paths[stop.trip_id].append([stop.longitude, stop.latitude])
 
-    colors = ["#ff007f", "#ff4500", "#9400d3", "#ff1493", "#ff6347", "#8b008b", "#dc143c"]
+    # Bright, high-contrast palette for zoomed-out visibility
+    colors = [
+        "#00E5FF",  # cyan
+        "#FF1744",  # red/pink
+        "#00E676",  # green
+        "#FFEA00",  # yellow
+        "#7C4DFF",  # purple
+        "#FF9100",  # orange
+        "#F500FF",  # magenta
+        "#18FFFF",  # aqua
+        "#76FF03",  # lime
+        "#FF3D00",  # deep orange
+    ]
 
     features = []
     for trip_id, coords in trip_paths.items():

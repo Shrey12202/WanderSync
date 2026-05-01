@@ -85,7 +85,6 @@ async def get_geotagged_media(
             ),
             Media.latitude.isnot(None),
             Media.longitude.isnot(None),
-            Media.file_type == "image",
         )
         .order_by(Media.taken_at.desc().nullslast())
     )
