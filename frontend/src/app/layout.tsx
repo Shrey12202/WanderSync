@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import AppShell from "@/components/layout/AppShell";
@@ -6,6 +6,19 @@ import AppShell from "@/components/layout/AppShell";
 export const metadata: Metadata = {
   title: "WanderSync — Personal Travel Journal",
   description: "Visualize your travels on interactive maps with trip management, media uploads, and animated path playback.",
+  applicationName: "WanderSync",
+  appleWebApp: {
+    capable: true,
+    title: "WanderSync",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0a0e1a",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

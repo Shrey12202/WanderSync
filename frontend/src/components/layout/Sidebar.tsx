@@ -24,7 +24,7 @@ export default function Sidebar() {
   const initials = displayName[0]?.toUpperCase() ?? "T";
 
   return (
-    <aside className="w-full md:w-[280px] h-[64px] md:h-screen flex flex-row md:flex-col border-t md:border-t-0 md:border-r border-[var(--color-border)] bg-[var(--color-surface)] z-50 shrink-0">
+    <aside className="w-full md:w-[280px] h-[64px] md:h-[100dvh] flex flex-row md:flex-col border-t md:border-t-0 md:border-r border-[var(--color-border)] bg-[var(--color-surface)] z-50 shrink-0">
       {/* Logo */}
       <div className="hidden md:block p-6 border-b border-[var(--color-border)]">
         <Link href="/" className="flex items-center gap-3 no-underline">

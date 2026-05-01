@@ -198,10 +198,10 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     "w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:border-amber-500/50 transition-all placeholder:text-[var(--color-text-secondary)]/50";
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-[100dvh] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
+        <div className="flex items-center gap-3 md:gap-4 min-w-0">
           {/* Bug 9 — Back goes to /trips not / */}
           <Link
             href="/trips"
@@ -209,8 +209,8 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           >
             ← Back
           </Link>
-          <div>
-            <h1 className="text-xl font-bold text-[var(--color-text)] m-0">{trip.title}</h1>
+          <div className="min-w-0">
+            <h1 className="text-lg md:text-xl font-bold text-[var(--color-text)] m-0 truncate">{trip.title}</h1>
             <p className="text-xs text-[var(--color-text-secondary)] m-0 mt-0.5">
               {formatDateRange(trip.start_date, trip.end_date)} • {allStops.length} stops • {allMedia.length} photos
             </p>
@@ -219,9 +219,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         {/* Map (main area) — Bug 12: pass geotaggedMedia as mediaMarkers */}
-        <div className="flex-1 p-4">
+        <div className="flex-1 p-3 md:p-4 min-h-0">
           <MapView
             mapData={mapData}
             activeStopIndex={activeStopIndex}
@@ -236,7 +236,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Side panel */}
-        <div className="w-[380px] border-l border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col overflow-hidden shrink-0">
+        <div className="w-full md:w-[380px] border-t md:border-t-0 md:border-l border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col overflow-hidden shrink-0 h-[45dvh] md:h-auto">
           {/* Tabs */}
           <div className="flex border-b border-[var(--color-border)] shrink-0">
             {[
@@ -260,7 +260,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto overflow-x-visible p-4" style={{ position: 'relative' }}>
+          <div className="flex-1 overflow-y-auto overflow-x-visible p-4 min-h-0" style={{ position: "relative" }}>
             {activeTab === "timeline" && (
               <>
                 {/* Bug 10 — Show description above timeline */}

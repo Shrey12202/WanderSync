@@ -351,7 +351,7 @@ export default function MemoryWallPage() {
   }, []);
 
   return (
-    <div className="relative w-full h-screen overflow-hidden">
+    <div className="relative w-full h-[100dvh] overflow-hidden">
       {/* Overlay */}
       <div className="absolute top-4 left-4 right-4 md:right-auto md:top-6 md:left-6 z-10 p-4 md:p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl md:max-w-xs pointer-events-none">
         <h1 className="text-xl md:text-2xl font-bold text-[var(--color-text)] m-0">🌍 Memory Wall</h1>

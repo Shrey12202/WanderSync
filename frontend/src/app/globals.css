@@ -28,6 +28,13 @@ html, body {
   color: var(--color-text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Avoid iOS "rubber band" scrolling impacting fixed layouts */
+html {
+  overscroll-behavior-y: none;
 }
 
 ::-webkit-scrollbar { width: 6px; }
