@@ -191,18 +191,40 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
             }}
             className="relative aspect-square rounded-xl overflow-hidden border border-[var(--color-border)] hover:border-teal-500 transition-all duration-200 group ring-0 hover:ring-2 hover:ring-teal-500/30"
           >
-            {item.file_type === "image" ? (
-              <img
-                src={getThumbnailUrl(item.thumbnail_path, item.file_path)}
-                alt={item.caption || item.file_name}
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                loading="lazy"
-              />
-            ) : (
-              <div className="w-full h-full bg-[var(--color-bg)] flex items-center justify-center">
-                <span className="text-2xl">🎬</span>
-              </div>
-            )}
+            {(() => {
+              const thumb =
+                item.thumbnail_path
+                  ? getThumbnailUrl(item.thumbnail_path, item.file_path)
+                  : item.file_type === "image"
+                    ? getMediaUrl(item.file_path)
+                    : null;
+
+              if (!thumb) {
+                return (
+                  <div className="w-full h-full bg-[var(--color-bg)] flex items-center justify-center">
+                    <span className="text-2xl">🎬</span>
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  <img
+                    src={thumb}
+                    alt={item.caption || item.file_name}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  {item.file_type === "video" && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full bg-black/50 border border-white/20 backdrop-blur-sm flex items-center justify-center">
+                        <span className="text-white text-lg leading-none">▶</span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {/* Hover overlay */}
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-end">
               <div className="w-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">

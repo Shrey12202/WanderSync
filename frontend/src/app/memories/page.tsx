@@ -16,11 +16,16 @@ export default function MemoryWallPage() {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const animRef = useRef<number | null>(null);
   const isInteractingRef = useRef(false);
+  const isGlobeViewRef = useRef(true);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const [mediaCount, setMediaCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeCluster, setActiveCluster] = useState<{stopName: string, items: MediaWithContext[]} | null>(null);
   const [isGlobeView, setIsGlobeView] = useState(true);
+
+  useEffect(() => {
+    isGlobeViewRef.current = isGlobeView;
+  }, [isGlobeView]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !mapContainer.current) return;
@@ -118,6 +123,10 @@ export default function MemoryWallPage() {
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const spin = () => {
+      if (!isGlobeViewRef.current) {
+        animRef.current = requestAnimationFrame(spin);
+        return;
+      }
       if (!isInteractingRef.current && !isZoomedIn() && mapRef.current) {
         const c = mapRef.current.getCenter();
         c.lng -= SPEED;
@@ -225,7 +234,12 @@ export default function MemoryWallPage() {
 
     groups.forEach((group) => {
       const firstItem = group.items[0];
-      const firstThumb = getThumbnailUrl(firstItem.thumbnail_path ?? null, firstItem.file_path);
+      const getCover = (item: MediaWithContext) => {
+        if (item.thumbnail_path) return getThumbnailUrl(item.thumbnail_path, item.file_path);
+        if (item.file_type === "image") return getThumbnailUrl(null, item.file_path);
+        return null;
+      };
+      const firstThumb = getCover(firstItem);
 
       // Outer wrapper — Mapbox positioning only
       const el = document.createElement("div");
@@ -248,14 +262,33 @@ export default function MemoryWallPage() {
       `;
 
       const img = document.createElement("img");
-      img.src = firstThumb;
+      if (firstThumb) img.src = firstThumb;
       img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;transition: opacity 0.5s ease-in-out;";
       img.onerror = () => {
         img.src = "";
         inner.style.background = "linear-gradient(135deg,#f59e0b33,#14b8a633)";
         inner.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;">🏔️</div>`;
       };
-      inner.appendChild(img);
+      if (firstThumb) {
+        inner.appendChild(img);
+      } else {
+        inner.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">🎬</div>`;
+      }
+
+      // Video badge (show even when we have a thumbnail)
+      if (firstItem.file_type === "video") {
+        const badge = document.createElement("div");
+        badge.style.cssText = `
+          position:absolute;bottom:4px;left:4px;
+          background:rgba(0,0,0,0.65);color:#fff;
+          font-size:9px;font-weight:700;
+          padding:2px 5px;border-radius:8px;
+          border:1px solid rgba(255,255,255,0.18);
+          backdrop-filter:blur(6px);
+        `;
+        badge.textContent = "VIDEO";
+        inner.appendChild(badge);
+      }
 
       // Add rotation to base image
       let rotateInterval: ReturnType<typeof setInterval> | null = null;
@@ -263,8 +296,16 @@ export default function MemoryWallPage() {
         let currentIdx = 0;
         rotateInterval = setInterval(() => {
           currentIdx = (currentIdx + 1) % group.items.length;
-          const url = getThumbnailUrl(group.items[currentIdx].thumbnail_path ?? null, group.items[currentIdx].file_path);
-          img.src = url;
+          const url = getCover(group.items[currentIdx]);
+          if (url) {
+            if (!img.parentElement) {
+              inner.innerHTML = "";
+              inner.appendChild(img);
+            }
+            img.src = url;
+          } else {
+            inner.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">🎬</div>`;
+          }
         }, 3000);
       }
 
@@ -324,6 +365,13 @@ export default function MemoryWallPage() {
     const updateOcclusion = () => {
       if (!mapRef.current) return;
       const m = mapRef.current;
+      if (!isGlobeViewRef.current) {
+        markerEls.forEach(({ el }) => {
+          el.style.opacity = "1";
+          el.style.pointerEvents = "auto";
+        });
+        return;
+      }
       const center = m.getCenter();
       const zoom = m.getZoom();
       
