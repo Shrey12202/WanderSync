@@ -20,9 +20,13 @@ export default function MemoryWallPage() {
   const [mediaCount, setMediaCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeCluster, setActiveCluster] = useState<{stopName: string, items: MediaWithContext[]} | null>(null);
+  const [isGlobeView, setIsGlobeView] = useState(true);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !mapContainer.current) return;
+
+    const isSmallScreen = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
+    const controlPosition: mapboxgl.ControlPosition = isSmallScreen ? "bottom-right" : "top-right";
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
@@ -72,7 +76,7 @@ export default function MemoryWallPage() {
       }
     });
 
-    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+    map.addControl(new mapboxgl.NavigationControl(), controlPosition);
 
     class ResetZoomControl {
       _map: mapboxgl.Map | undefined;
@@ -104,7 +108,7 @@ export default function MemoryWallPage() {
       }
     }
 
-    map.addControl(new ResetZoomControl(), "top-right");
+    map.addControl(new ResetZoomControl(), controlPosition);
 
     // Globe spin
     const BASE_ZOOM = 1.5;
@@ -195,22 +199,24 @@ export default function MemoryWallPage() {
     });
     markersRef.current = [];
 
-    // Dynamic zoom-based clustering
+    // Screen-space clustering so markers merge when they visually overlap
     const zoom = map.getZoom();
-    // Increase threshold when zoomed out to group more. Decrease when zoomed in to separate.
-    // At zoom 1 -> threshold is 1.25 degrees. At zoom 10 -> threshold is ~0.002 degrees.
-    const GPS_THRESHOLD = 2.5 / Math.pow(2, zoom);
-    const groups: { lng: number; lat: number; items: MediaWithContext[] }[] = [];
+    const thresholdPx = Math.max(56, 90 - zoom * 4); // merge more when zoomed out
+    const groups: { lng: number; lat: number; items: MediaWithContext[]; point: { x: number; y: number } }[] = [];
 
     media.forEach((item) => {
       if (item.latitude == null || item.longitude == null) return;
-      const existing = groups.find(
-        (g) => Math.abs(g.lng - item.longitude!) < GPS_THRESHOLD && Math.abs(g.lat - item.latitude!) < GPS_THRESHOLD
-      );
+      const lngLat = new mapboxgl.LngLat(item.longitude, item.latitude);
+      const p = map.project(lngLat);
+      const existing = groups.find((g) => {
+        const dx = g.point.x - p.x;
+        const dy = g.point.y - p.y;
+        return Math.hypot(dx, dy) < thresholdPx;
+      });
       if (existing) {
         existing.items.push(item);
       } else {
-        groups.push({ lng: item.longitude, lat: item.latitude, items: [item] });
+        groups.push({ lng: item.longitude, lat: item.latitude, items: [item], point: { x: p.x, y: p.y } });
       }
     });
 
@@ -371,14 +377,48 @@ export default function MemoryWallPage() {
     (map as any)._onZoomEnd = onZoomEnd;
   }, []);
 
+  // Toggle globe vs flat map projection
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    try {
+      map.setProjection(isGlobeView ? ({ name: "globe" } as any) : ({ name: "mercator" } as any));
+      if (isGlobeView) {
+        map.setFog({
+          color: "rgb(5, 10, 25)",
+          "high-color": "rgb(30, 60, 120)",
+          "horizon-blend": 0.2,
+          "space-color": "rgb(5, 5, 15)",
+          "star-intensity": 0.7,
+        });
+      } else {
+        map.setFog(null as any);
+      }
+    } catch (e) {
+      console.warn("Projection toggle failed:", e);
+    }
+  }, [isGlobeView]);
+
   return (
     <div className="relative w-full h-full overflow-hidden">
       {/* Overlay */}
-      <div className="absolute top-4 left-4 right-4 md:right-auto md:top-6 md:left-6 z-10 p-4 md:p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl md:max-w-xs pointer-events-none">
+      <div className="absolute top-4 left-4 z-10 p-4 md:p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl w-[min(20rem,calc(100vw-5.5rem))] pointer-events-none">
         <h1 className="text-xl md:text-2xl font-bold text-[var(--color-text)] m-0">🌍 Memory Wall</h1>
         <p className="text-[var(--color-text-secondary)] mt-1 text-xs">
           Your photos placed at their real GPS locations
         </p>
+        <div className="mt-3 flex items-center gap-2 flex-wrap pointer-events-auto">
+          <button
+            onClick={() => setIsGlobeView((v) => !v)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              isGlobeView
+                ? "bg-teal-500/15 text-teal-400 border border-teal-500/20"
+                : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
+            }`}
+          >
+            {isGlobeView ? "🌍 Globe" : "🗺️ Flat Map"}
+          </button>
+        </div>
         {!loading && (
           <p className="text-amber-400 text-xs mt-2 font-medium">
             {mediaCount} {mediaCount === 1 ? "memory" : "memories"} pinned

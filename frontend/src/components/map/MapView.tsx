@@ -96,17 +96,21 @@ export default function MapView({
     if (!canvasRef.current || mapRef.current) return;
 
     const initialStyle = spinGlobe ? "mapbox://styles/mapbox/dark-v11" : normalStyle;
+    const isSmallScreen = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
+    // Flat map was feeling too zoomed-in; keep it a bit wider on all screens.
+    const initialFlatZoom = isSmallScreen ? 1.25 : 1.5;
+    const controlPosition: mapboxgl.ControlPosition = isSmallScreen ? "bottom-right" : "top-right";
     const map = new mapboxgl.Map({
       container: canvasRef.current,
       style: initialStyle,
       center: [0, 20],
-      zoom: spinGlobe ? 1 : 2,
+      zoom: spinGlobe ? 1 : initialFlatZoom,
       pitch: 0,
       antialias: true,
       projection: spinGlobe ? { name: "globe" } : { name: "mercator" },
     } as any);
 
-    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+    map.addControl(new mapboxgl.NavigationControl(), controlPosition);
 
     class ResetZoomControl {
       _map: mapboxgl.Map | undefined;
@@ -126,7 +130,7 @@ export default function MapView({
         button.style.alignItems = 'center';
         button.style.justifyContent = 'center';
         button.onclick = () => {
-          map.flyTo({ zoom: spinGlobe ? 1 : 2, pitch: 0, bearing: 0, duration: 1500 });
+          map.flyTo({ zoom: spinGlobe ? 1 : initialFlatZoom, pitch: 0, bearing: 0, duration: 1500 });
         };
         this._container.appendChild(button);
         return this._container;
@@ -139,7 +143,7 @@ export default function MapView({
       }
     }
 
-    map.addControl(new ResetZoomControl(), "top-right");
+    map.addControl(new ResetZoomControl(), controlPosition);
 
     map.on("load", () => {
       setMapLoaded(true);

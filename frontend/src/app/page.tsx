@@ -42,7 +42,8 @@ export default function HomeMap() {
   return (
     <div className="relative w-full h-full overflow-hidden">
       {/* Absolute Header Overlay */}
-      <div className="absolute top-4 left-4 right-4 md:right-auto md:top-6 md:left-6 z-10 p-4 md:p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl md:max-w-sm">
+      {/* Keep a safe right gutter so map controls aren't hidden on mobile */}
+      <div className="absolute top-4 left-4 z-10 p-4 md:p-5 glass rounded-2xl border border-[var(--color-border)] shadow-2xl w-[min(24rem,calc(100vw-5.5rem))]">
         <h1 className="text-xl md:text-2xl font-bold text-[var(--color-text)] m-0">
           WanderSync
         </h1>
