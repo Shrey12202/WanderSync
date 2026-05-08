@@ -75,8 +75,13 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   }, [loadTrip]);
 
   // Resolve road / flight geometry whenever the ordered list of stops changes.
-  // Caches per leg in localStorage so a given pair is fetched at most once.
+  // Live-recorded walks already have an actual GPS track in mapData.path —
+  // skip directions entirely for those.
   useEffect(() => {
+    if (trip?.track_geojson) {
+      setRouteOverride(null);
+      return;
+    }
     if (allStops.length < 2) {
       setRouteOverride(null);
       return;
@@ -94,7 +99,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     // We intentionally serialize the stops fingerprint so identical lists don't
     // re-trigger the effect (the array identity changes on each render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allStops.map((s) => `${s.id}:${s.latitude},${s.longitude}:${s.is_airport ? 1 : 0}`).join("|")]);
+  }, [trip?.track_geojson, allStops.map((s) => `${s.id}:${s.latitude},${s.longitude}:${s.is_airport ? 1 : 0}`).join("|")]);
 
   // Playback logic
   useEffect(() => {
@@ -215,9 +220,21 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             ← Back
           </Link>
           <div className="min-w-0">
-            <h1 className="text-lg md:text-xl font-bold text-[var(--color-text)] m-0 truncate">{trip.title}</h1>
+            <h1 className="text-lg md:text-xl font-bold text-[var(--color-text)] m-0 truncate flex items-center gap-2">
+              {trip.track_geojson && <span title="Live recorded walk" className="text-amber-400">🎙</span>}
+              <span className="truncate">{trip.title}</span>
+            </h1>
             <p className="text-xs text-[var(--color-text-secondary)] m-0 mt-0.5">
-              {formatDateRange(trip.start_date, trip.end_date)} • {allStops.length} stops • {allMedia.length} photos
+              {trip.track_geojson && trip.track_distance_m != null
+                ? <>
+                    {formatDateRange(trip.start_date, trip.end_date)}
+                    {" • "}
+                    <span className="text-amber-400">{trip.track_distance_m < 1000 ? `${trip.track_distance_m.toFixed(0)} m` : `${(trip.track_distance_m / 1000).toFixed(2)} km`}</span>
+                    {trip.track_duration_s != null && <> {" • "}{Math.floor(trip.track_duration_s / 60)} min</>}
+                    {" • "}{allMedia.length} photos
+                  </>
+                : <>{formatDateRange(trip.start_date, trip.end_date)} • {allStops.length} stops • {allMedia.length} photos</>
+              }
             </p>
           </div>
         </div>

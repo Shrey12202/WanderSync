@@ -82,6 +82,29 @@ async def lifespan(app: FastAPI):
                     RAISE NOTICE 'stops.is_airport column added';
                 END IF;
 
+                -- 6. Live-recorded walks: track GeoJSON + summary stats
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'trips' AND column_name = 'track_geojson'
+                ) THEN
+                    ALTER TABLE trips ADD COLUMN track_geojson JSONB;
+                    RAISE NOTICE 'trips.track_geojson column added';
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'trips' AND column_name = 'track_distance_m'
+                ) THEN
+                    ALTER TABLE trips ADD COLUMN track_distance_m DOUBLE PRECISION;
+                    RAISE NOTICE 'trips.track_distance_m column added';
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'trips' AND column_name = 'track_duration_s'
+                ) THEN
+                    ALTER TABLE trips ADD COLUMN track_duration_s INTEGER;
+                    RAISE NOTICE 'trips.track_duration_s column added';
+                END IF;
+
             END $$;
         """))
         print("✅ Schema migration complete")

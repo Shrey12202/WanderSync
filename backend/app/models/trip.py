@@ -3,9 +3,9 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import String, Text, Date, DateTime, Index
+from sqlalchemy import String, Text, Date, DateTime, Index, Float, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from app.database import Base
 
@@ -23,6 +23,11 @@ class Trip(Base):
     cover_image: Mapped[str | None] = mapped_column(Text, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Live-recorded walks store the captured GeoJSON LineString here. When set,
+    # the map renders this directly instead of computing a road-snapped path.
+    track_geojson: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    track_distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    track_duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

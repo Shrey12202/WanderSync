@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import date, datetime
-from typing import Optional, List
+from typing import Any, Optional, List
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,6 +14,11 @@ class TripCreate(BaseModel):
     description: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    # Optional live-recorded GPS track (GeoJSON LineString) + summary stats.
+    # Only set by the /trips/record flow.
+    track_geojson: Optional[Any] = None
+    track_distance_m: Optional[float] = None
+    track_duration_s: Optional[int] = None
 
 
 class TripUpdate(BaseModel):
@@ -22,6 +27,9 @@ class TripUpdate(BaseModel):
     cover_image: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    track_geojson: Optional[Any] = None
+    track_distance_m: Optional[float] = None
+    track_duration_s: Optional[int] = None
 
 
 # ── Response schemas ─────────────────────────────────────────
@@ -35,6 +43,9 @@ class TripBase(BaseModel):
     cover_image: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    track_geojson: Optional[Any] = None
+    track_distance_m: Optional[float] = None
+    track_duration_s: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

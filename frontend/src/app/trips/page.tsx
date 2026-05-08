@@ -51,12 +51,21 @@ export default function TripsDashboard() {
             Manage and view your travel experiences
           </p>
         </div>
-        <Link
-          href="/trips/new"
-          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-[#0a0e1a] font-semibold text-sm no-underline hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
-        >
-          + New Trip
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href="/trips/record"
+            className="px-4 py-2.5 rounded-xl bg-[var(--color-surface)] text-amber-400 border border-amber-500/30 font-semibold text-sm no-underline hover:bg-amber-500/10 transition-all flex items-center gap-2"
+            title="Record a live walk with your phone's GPS"
+          >
+            <span className="text-base">🎙</span> Record Walk
+          </Link>
+          <Link
+            href="/trips/new"
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-[#0a0e1a] font-semibold text-sm no-underline hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+          >
+            + New Trip
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}

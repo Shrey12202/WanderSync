@@ -60,7 +60,21 @@ async def get_map_data(
         path_coordinates.append([stop.longitude, stop.latitude])
 
     path = None
-    if len(path_coordinates) >= 2:
+    # Live-recorded walks have an actual GPS LineString — prefer that over
+    # the straight-line stops geometry.
+    if trip.track_geojson and isinstance(trip.track_geojson, dict):
+        coords = trip.track_geojson.get("coordinates") or []
+        if len(coords) >= 2:
+            path = {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": coords},
+                "properties": {
+                    "trip_id": str(trip_id),
+                    "trip_title": trip.title,
+                    "is_track": True,
+                },
+            }
+    if path is None and len(path_coordinates) >= 2:
         path = {
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": path_coordinates},
@@ -137,8 +151,26 @@ async def get_global_paths(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """All trip paths for the global map — scoped to the authenticated user."""
-    from sqlalchemy import and_, or_
+    """All trip paths for the global map — scoped to the authenticated user.
+
+    Live-recorded walks render their captured GPS track; planned trips render
+    a straight-line geometry connecting their stops.
+    """
+    from sqlalchemy import or_
+
+    # 1. Fetch trips with a recorded track first — they short-circuit stops.
+    trip_stmt = select(Trip).where(or_(Trip.user_id == user_id, Trip.user_id.is_(None)))
+    trip_result = await db.execute(trip_stmt)
+    trips = trip_result.scalars().all()
+
+    track_paths: dict = {}
+    for t in trips:
+        if t.track_geojson and isinstance(t.track_geojson, dict):
+            coords = t.track_geojson.get("coordinates") or []
+            if len(coords) >= 2:
+                track_paths[t.id] = coords
+
+    # 2. Stops-based geometry for trips without a recorded track.
     stmt = (
         select(Stop)
         .join(Trip, Stop.trip_id == Trip.id)
@@ -154,6 +186,8 @@ async def get_global_paths(
 
     trip_paths: dict = {}
     for stop in stops:
+        if stop.trip_id in track_paths:
+            continue  # already covered by the recorded track above
         if stop.trip_id not in trip_paths:
             trip_paths[stop.trip_id] = []
         trip_paths[stop.trip_id].append([stop.longitude, stop.latitude])
@@ -173,6 +207,13 @@ async def get_global_paths(
     ]
 
     features = []
+    for trip_id, coords in track_paths.items():
+        color_index = trip_id.int % len(colors)
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {"trip_id": str(trip_id), "color": colors[color_index], "is_track": True},
+        })
     for trip_id, coords in trip_paths.items():
         if len(coords) >= 2:
             color_index = trip_id.int % len(colors)

@@ -5,6 +5,11 @@
 
 // ── Core entities ───────────────────────────────────────────
 
+export interface TrackGeoJSON {
+  type: "LineString";
+  coordinates: [number, number][];
+}
+
 export interface Trip {
   id: string;
   title: string;
@@ -12,6 +17,9 @@ export interface Trip {
   cover_image: string | null;
   start_date: string | null;
   end_date: string | null;
+  track_geojson: TrackGeoJSON | null;
+  track_distance_m: number | null;
+  track_duration_s: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +109,9 @@ export interface CreateTripRequest {
   description?: string;
   start_date?: string;
   end_date?: string;
+  track_geojson?: TrackGeoJSON;
+  track_distance_m?: number;
+  track_duration_s?: number;
 }
 
 export interface UpdateTripRequest {
@@ -109,6 +120,9 @@ export interface UpdateTripRequest {
   cover_image?: string;
   start_date?: string;
   end_date?: string;
+  track_geojson?: TrackGeoJSON;
+  track_distance_m?: number;
+  track_duration_s?: number;
 }
 
 export interface CreateDayRequest {
