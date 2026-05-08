@@ -208,25 +208,42 @@ export default function MemoryWallPage() {
     });
     markersRef.current = [];
 
-    // Screen-space clustering: merge markers when they visually overlap.
-    // Each marker is MARKER_PX wide, so any two markers whose centers are
-    // closer than MARKER_PX must be visually overlapping and should merge.
-    // We add a small padding to also catch borders/shadows.
-    // A geographic cap is intentionally NOT applied — if two photos appear
-    // overlapped on screen at the current zoom, the user expects a single
-    // cluster. Zooming in re-runs this function via the `zoomend` listener,
-    // which automatically splits clusters once the markers no longer overlap.
+    // Two-condition clustering — markers merge ONLY when both:
+    //   1. Their boxes visually overlap on screen (center distance < marker size + shadow pad).
+    //   2. They are within a generous geographic radius. Globe projection at low
+    //      zooms can make far-apart cities (e.g. Abu Dhabi vs Gujarat ~1,850 km)
+    //      look adjacent on screen even though they shouldn't share a cluster.
+    //
+    // The geo cap is calibrated so:
+    //   • Same city / metro photos merge at every zoom.
+    //   • Nearby-region photos (~400–500 km, e.g. Mumbai ↔ Gujarat) merge when
+    //     they visually overlap — the screen-space rule is the binding one.
+    //   • Truly far cities (≳700 km, e.g. AD ↔ Gujarat, NYC ↔ LA) never merge,
+    //     regardless of zoom or projection distortion.
     const MARKER_PX = 56;
     const SHADOW_PAD = 6;
     const zoom = map.getZoom();
     const thresholdPx = Math.max(MARKER_PX + SHADOW_PAD, 84 - zoom * 3);
+    const maxMergeKm = Math.max(80, 1500 - zoom * 200);
     const groups: { lng: number; lat: number; items: MediaWithContext[]; point: { x: number; y: number } }[] = [];
+
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const haversineKm = (aLng: number, aLat: number, bLng: number, bLat: number) => {
+      const R = 6371;
+      const dLat = toRad(bLat - aLat);
+      const dLng = toRad(bLng - aLng);
+      const sa =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return 2 * R * Math.atan2(Math.sqrt(sa), Math.sqrt(1 - sa));
+    };
 
     media.forEach((item) => {
       if (item.latitude == null || item.longitude == null) return;
       const lngLat = new mapboxgl.LngLat(item.longitude, item.latitude);
       const p = map.project(lngLat);
       const existing = groups.find((g) => {
+        if (haversineKm(g.lng, g.lat, item.longitude!, item.latitude!) > maxMergeKm) return false;
         const dx = g.point.x - p.x;
         const dy = g.point.y - p.y;
         return Math.hypot(dx, dy) < thresholdPx;
