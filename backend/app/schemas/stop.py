@@ -15,6 +15,8 @@ class StopCreate(BaseModel):
     arrival_time: Optional[datetime] = None
     departure_time: Optional[datetime] = None
     sequence_order: int = 0
+    place_id: Optional[str] = None
+    is_airport: Optional[bool] = False
 
 
 class StopUpdate(BaseModel):
@@ -25,6 +27,8 @@ class StopUpdate(BaseModel):
     arrival_time: Optional[datetime] = None
     departure_time: Optional[datetime] = None
     sequence_order: Optional[int] = None
+    place_id: Optional[str] = None
+    is_airport: Optional[bool] = None
 
 
 class StopResponse(BaseModel):
@@ -40,6 +44,8 @@ class StopResponse(BaseModel):
     arrival_time: Optional[datetime] = None
     departure_time: Optional[datetime] = None
     sequence_order: int
+    place_id: Optional[str] = None
+    is_airport: bool = False
     created_at: datetime
     media: List["MediaResponse"] = []
 

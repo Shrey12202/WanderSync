@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey
+from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -33,6 +33,9 @@ class Stop(Base):
         DateTime(timezone=True), nullable=True
     )
     sequence_order: Mapped[int] = mapped_column(Integer, default=0)
+    # Optional Google Places metadata — used to drive route rendering
+    place_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_airport: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

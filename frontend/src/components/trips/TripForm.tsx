@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createTrip, createDay, createStop } from "@/lib/api";
 import type { CreateTripRequest } from "@/types";
+import GooglePlacesSearch from "@/components/search/GooglePlacesSearch";
 
 interface ItineraryStop {
   name: string;
   latitude: number;
   longitude: number;
+  place_id?: string;
+  is_airport?: boolean;
 }
 
 const TITLE_MAX = 100;
@@ -18,7 +21,6 @@ export default function TripForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const sessionTokenRef = useRef(crypto.randomUUID());
   const [form, setForm] = useState<CreateTripRequest>({
     title: "",
     description: "",
@@ -26,29 +28,8 @@ export default function TripForm() {
     end_date: "",
   });
 
-  // Itinerary builder state
   const [stops, setStops] = useState<ItineraryStop[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (searchQuery.length > 2) {
-      const fetchPlaces = async () => {
-        try {
-          const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(searchQuery)}&session_token=${sessionTokenRef.current}&access_token=${token}`);
-          const data = await res.json();
-          if (data.suggestions) setSuggestions(data.suggestions);
-        } catch (e) {
-          console.error("Geocoding error:", e);
-        }
-      };
-      const timeoutId = setTimeout(fetchPlaces, 500);
-      return () => clearTimeout(timeoutId);
-    } else {
-      setSuggestions([]);
-    }
-  }, [searchQuery]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +81,8 @@ export default function TripForm() {
             latitude: stops[i].latitude,
             longitude: stops[i].longitude,
             sequence_order: i,
+            place_id: stops[i].place_id,
+            is_airport: stops[i].is_airport ?? false,
           });
         }
       }
@@ -224,51 +207,27 @@ export default function TripForm() {
           </ul>
         )}
 
-        <div className="relative mt-2">
-          <input
-            type="text"
-            className={`${inputClass} !border-amber-500/30 placeholder:text-amber-500/40`}
-            placeholder="Search for a specific place, business, or city..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {suggestions.length > 0 && (
-            <ul className="absolute bottom-full mb-1 z-10 w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg max-h-48 overflow-y-auto shadow-xl custom-scrollbar left-0">
-              {suggestions.map((suggestion, i) => (
-                <li
-                  key={i}
-                  className="px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer truncate transition-colors"
-                  onClick={async () => {
-                    try {
-                      const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-                      const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=${sessionTokenRef.current}&access_token=${token}`);
-                      const data = await res.json();
-                      if (data.features && data.features.length > 0) {
-                        const feature = data.features[0];
-                        setStops([...stops, {
-                          name: suggestion.name || feature.properties.name || suggestion.full_address,
-                          longitude: feature.geometry.coordinates[0],
-                          latitude: feature.geometry.coordinates[1],
-                        }]);
-                        setSearchQuery("");
-                        setSuggestions([]);
-                        // Reset session token after successful retrieval
-                        sessionTokenRef.current = crypto.randomUUID();
-                      }
-                    } catch (e) {
-                      console.error("Retrieve error:", e);
-                    }
-                  }}
-                >
-                  <span className="font-medium block truncate">{suggestion.name || suggestion.full_address}</span>
-                  <span className="block text-[10px] text-[var(--color-text-secondary)] mt-0.5 truncate">
-                    {suggestion.full_address || suggestion.place_formatted}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <GooglePlacesSearch
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onSelect={(place) => {
+            setStops((prev) => [
+              ...prev,
+              {
+                name: place.name,
+                latitude: place.lat,
+                longitude: place.lng,
+                place_id: place.place_id,
+                is_airport: place.is_airport,
+              },
+            ]);
+            setSearchQuery("");
+          }}
+          placeholder="Search for a specific place, business, or city..."
+          className="mt-2"
+          inputClassName={`${inputClass} !border-amber-500/30 placeholder:text-amber-500/40`}
+          suggestionsPosition="above"
+        />
       </div>
 
       <div className="flex gap-3 pt-4">

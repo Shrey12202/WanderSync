@@ -3,6 +3,7 @@
 import type { MediaItem } from "@/types";
 import { getMediaUrl, getThumbnailUrl, updateMedia, deleteMedia } from "@/lib/api";
 import { useState, useEffect, useCallback } from "react";
+import GooglePlacesSearch, { googleReverseGeocode } from "@/components/search/GooglePlacesSearch";
 
 interface MediaGalleryProps {
   media: MediaItem[];
@@ -25,7 +26,6 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
   const [editLng, setEditLng] = useState("");
   const [editDate, setEditDate] = useState("");
   const [editSearch, setEditSearch] = useState("");
-  const [editSuggestions, setEditSuggestions] = useState<any[]>([]);
 
   const activeMedia = lightboxIndex !== null ? media[lightboxIndex] : null;
 
@@ -37,7 +37,6 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
       setEditLng(activeMedia.longitude != null ? String(activeMedia.longitude) : "");
       setEditDate(activeMedia.taken_at ? new Date(activeMedia.taken_at).toISOString().split("T")[0] : "");
       setEditSearch("");   // will be filled by reverse geocode effect below
-      setEditSuggestions([]);
       setSaveError(null);
       setEditing(false);
       setConfirmDelete(false); // Bug 8 — reset on photo switch
@@ -46,53 +45,20 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
 
   // When edit mode opens, reverse-geocode existing lat/lng to populate the search field
   useEffect(() => {
-    if (!editing || !activeMedia?.latitude || !activeMedia?.longitude) return;
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-    if (!token) return;
+    if (!editing || activeMedia?.latitude == null || activeMedia?.longitude == null) return;
+    if (editSearch) return;
 
     const lat = activeMedia.latitude;
     const lng = activeMedia.longitude;
-    // If editSearch already has content (user typed something), don't overwrite
-    if (editSearch) return;
-
-    const reverseGeocode = async () => {
-      try {
-        const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,locality,neighborhood,address&access_token=${token}`
-        );
-        const data = await res.json();
-        if (data.features && data.features.length > 0) {
-          setEditSearch(data.features[0].place_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        } else {
-          setEditSearch(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        }
-      } catch {
+    googleReverseGeocode(lat, lng)
+      .then((label) => {
+        setEditSearch(label || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      })
+      .catch(() => {
         setEditSearch(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-      }
-    };
-    reverseGeocode();
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
-
-  // Geocoding in edit mode
-  useEffect(() => {
-    if (editSearch.length > 2 && editing) {
-      const fetch_ = async () => {
-        try {
-          const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(
-            `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(editSearch)}&session_token=media-gallery-session&access_token=${token}`
-          );
-          const data = await res.json();
-          if (data.suggestions) setEditSuggestions(data.suggestions);
-        } catch { /* silent */ }
-      };
-      const t = setTimeout(fetch_, 500);
-      return () => clearTimeout(t);
-    } else {
-      setEditSuggestions([]);
-    }
-  }, [editSearch, editing]);
 
   const showNext = useCallback(() => {
     if (lightboxIndex !== null) setLightboxIndex((lightboxIndex + 1) % media.length);
@@ -365,46 +331,20 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
                   </div>
 
                   {/* Location search */}
-                  <div className="relative">
+                  <div>
                     <label className="text-white/50 text-[10px] font-semibold block mb-1">📍 Search Location</label>
-                    <input
-                      type="text"
-                      className={inputClass}
+                    <GooglePlacesSearch
                       value={editSearch}
-                      onChange={(e) => setEditSearch(e.target.value)}
+                      onChange={setEditSearch}
+                      onSelect={(place) => {
+                        setEditSearch(place.name);
+                        setEditLat(String(place.lat));
+                        setEditLng(String(place.lng));
+                      }}
                       placeholder="Search for a specific place, business, or city..."
+                      inputClassName={inputClass}
+                      suggestionsPosition="above"
                     />
-                    {editSuggestions.length > 0 && (
-                      <ul className="absolute z-20 w-full mt-1 bg-[#1a1f35] border border-white/10 rounded-lg max-h-36 overflow-y-auto shadow-2xl">
-                        {editSuggestions.map((suggestion, i) => (
-                          <li
-                            key={i}
-                            className="px-3 py-1.5 text-xs text-white/80 hover:bg-white/10 cursor-pointer"
-                            onClick={async () => {
-                              try {
-                                const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-                                const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=media-gallery-session&access_token=${token}`);
-                                const data = await res.json();
-                                if (data.features && data.features.length > 0) {
-                                  const feature = data.features[0];
-                                  setEditSearch(suggestion.name || feature.properties.name || suggestion.full_address || "");
-                                  setEditLng(String(feature.geometry.coordinates[0]));
-                                  setEditLat(String(feature.geometry.coordinates[1]));
-                                  setEditSuggestions([]);
-                                }
-                              } catch (err) {
-                                console.error("Retrieve error:", err);
-                              }
-                            }}
-                          >
-                            <span className="font-medium block truncate">{suggestion.name || suggestion.full_address}</span>
-                            <span className="block text-[10px] text-white/40 mt-0.5 truncate">
-                              {suggestion.full_address || suggestion.place_formatted}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
                   </div>
 
                   {/* Lat/Lng */}

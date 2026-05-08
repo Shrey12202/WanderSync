@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { uploadMedia, extractExif, getTrip } from "@/lib/api";
 import type { ExifData, MediaItem, Stop } from "@/types";
+import GooglePlacesSearch, { googleReverseGeocode } from "@/components/search/GooglePlacesSearch";
 
 interface UploadHandlerProps {
   tripId?: string;                // Optional — standalone uploads allowed
@@ -33,15 +34,10 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
 
   // Confirmation form state
   const [searchQuery, setSearchQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [overrideLat, setOverrideLat] = useState<string>("");
   const [overrideLng, setOverrideLng] = useState<string>("");
   const [overrideDate, setOverrideDate] = useState<string>("");
 
-  // Prevents geocoding from re-firing immediately after a suggestion is selected
-  const skipGeocodingRef = useRef(false);
-
-  // Fetch trip stops
   useEffect(() => {
     if (!tripId) return;
     getTrip(tripId)
@@ -54,40 +50,11 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
     if (!selectedExistingStopId) return;
     const stop = tripStops.find((s) => s.id === selectedExistingStopId);
     if (stop?.latitude != null && stop?.longitude != null) {
-      skipGeocodingRef.current = true;
       setOverrideLat(String(stop.latitude));
       setOverrideLng(String(stop.longitude));
       setSearchQuery(stop.name || "");
-      setSuggestions([]);
     }
   }, [selectedExistingStopId, tripStops]);
-
-  // Geocoding — CITY/POI level only (types=place,locality,poi,address)
-  // Skipped for one cycle after a suggestion or stop is selected
-  useEffect(() => {
-    if (skipGeocodingRef.current) {
-      skipGeocodingRef.current = false;
-      return;
-    }
-    if (searchQuery.length > 2) {
-      const fetchPlaces = async () => {
-        try {
-          const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(
-            `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(searchQuery)}&session_token=upload-session&access_token=${token}`
-          );
-          const data = await res.json();
-          if (data.suggestions) setSuggestions(data.suggestions);
-        } catch (e) {
-          console.error("Geocoding error:", e);
-        }
-      };
-      const id = setTimeout(fetchPlaces, 500);
-      return () => clearTimeout(id);
-    } else {
-      setSuggestions([]);
-    }
-  }, [searchQuery]);
 
   const processFile = async (selectedFile: File) => {
     setFile(selectedFile);
@@ -107,15 +74,8 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
       setOverrideDate(date);
 
       if (lat && lng) {
-        try {
-          const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(`https://api.mapbox.com/search/geocode/v6/reverse?longitude=${lng}&latitude=${lat}&access_token=${token}`);
-          const geoData = await res.json();
-          if (geoData.features?.length > 0) {
-            skipGeocodingRef.current = true;
-            setSearchQuery(geoData.features[0].properties.place_formatted || geoData.features[0].properties.full_address || "");
-          }
-        } catch { /* ignore */ }
+        const label = await googleReverseGeocode(parseFloat(lat), parseFloat(lng));
+        if (label) setSearchQuery(label);
       }
 
       setStep("confirm");
@@ -167,7 +127,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
   const handleCancel = () => {
     setStep("idle"); setFile(null);
     setOverrideLat(""); setOverrideLng(""); setOverrideDate("");
-    setSearchQuery(""); setSuggestions([]); setError(null);
+    setSearchQuery(""); setError(null);
     setExif(null); setSelectedExistingStopId("");
   };
 
@@ -271,78 +231,25 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
         </div>
 
         {/* Location search */}
-        <div className="relative">
+        <div>
           <label className="block text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">
-            📍 Location <span className="text-red-400">*</span>{selectedExistingStopId ? " (auto-filled)" : ""}
+            📍 Location <span className="text-red-400">*</span>{selectedExistingStopId !== "none" && selectedExistingStopId ? " (auto-filled)" : ""}
           </label>
-          <input
-            type="text"
-            className={`${inputClass} ${!hasLat || !hasLng ? "border-amber-500/40" : "border-teal-500/40"}`}
-            placeholder="Search for a specific place, business, or city..."
+          <GooglePlacesSearch
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setSelectedExistingStopId("");
+            onChange={(v) => {
+              setSearchQuery(v);
+              setSelectedExistingStopId("none");
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && suggestions.length > 0) {
-                e.preventDefault();
-                const suggestion = suggestions[0];
-                const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-                fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=upload-session&access_token=${token}`)
-                  .then(r => r.json())
-                  .then(data => {
-                    if (data.features && data.features.length > 0) {
-                      const feature = data.features[0];
-                      skipGeocodingRef.current = true;
-                      setSearchQuery(suggestion.name || feature.properties.name || suggestion.full_address);
-                      setOverrideLng(String(feature.geometry.coordinates[0]));
-                      setOverrideLat(String(feature.geometry.coordinates[1]));
-                      setSuggestions([]);
-                    }
-                  }).catch(console.error);
-              }
+            onSelect={(place) => {
+              setSearchQuery(place.name);
+              setOverrideLat(String(place.lat));
+              setOverrideLng(String(place.lng));
+              setSelectedExistingStopId("none");
             }}
+            placeholder="Search for a specific place, business, or city..."
+            inputClassName={`${inputClass} ${!hasLat || !hasLng ? "border-amber-500/40" : "border-teal-500/40"}`}
           />
-          {suggestions.length > 0 && (
-            <ul className="absolute z-20 w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl max-h-44 overflow-y-auto shadow-2xl">
-              {suggestions.map((suggestion, i) => (
-                <li
-                  key={i}
-                  className="px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
-                    try {
-                      const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-                      const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=upload-session&access_token=${token}`);
-                      const data = await res.json();
-                      if (data.features && data.features.length > 0) {
-                        const feature = data.features[0];
-                        skipGeocodingRef.current = true;
-                        setSearchQuery(suggestion.name || feature.properties.name || suggestion.full_address);
-                        setOverrideLng(String(feature.geometry.coordinates[0]));
-                        setOverrideLat(String(feature.geometry.coordinates[1]));
-                        setSuggestions([]);
-                        setSelectedExistingStopId("none");
-                      }
-                    } catch (err) {
-                      console.error("Retrieve error:", err);
-                    }
-                  }}
-                >
-                  <span className="font-medium block truncate">{suggestion.name || suggestion.full_address}</span>
-                  <span className="block text-[10px] text-[var(--color-text-secondary)] mt-0.5 truncate">
-                    {suggestion.full_address || suggestion.place_formatted}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {(!hasLat || !hasLng) && searchQuery.length > 0 && suggestions.length === 0 && (
-            <p className="text-[10px] text-amber-500 mt-1.5 ml-1">
-              Select a location from the dropdown suggestions or Enter manually below.
-            </p>
-          )}
         </div>
 
         {/* Coordinates (read-only display) */}

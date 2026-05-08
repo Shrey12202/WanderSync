@@ -52,6 +52,8 @@ async def get_map_data(
                 "arrival_time": stop.arrival_time.isoformat() if stop.arrival_time else None,
                 "departure_time": stop.departure_time.isoformat() if stop.departure_time else None,
                 "sequence_order": stop.sequence_order,
+                "place_id": stop.place_id,
+                "is_airport": stop.is_airport,
             },
         }
         stop_features.append(feature)

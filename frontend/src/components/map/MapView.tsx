@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { MapData, MediaItem } from "@/types";
-import { getThumbnailUrl, getMediaUrl } from "@/lib/api";
+import type { RouteResult } from "@/lib/directions";
+import { getThumbnailUrl } from "@/lib/api";
 import StopSlideshowModal from "@/components/media/StopSlideshowModal";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
@@ -21,6 +22,10 @@ interface MapViewProps {
   activeStopIndex?: number;
   className?: string;
   mediaMarkers?: MediaItem[];  // Bug 12: geotagged photos to show as map pins
+  /** Optional pre-computed route (road geometry + flight segments). When
+   *  provided, replaces the straight-line `mapData.path` rendering with a
+   *  road-snapped path plus dashed lines for flight legs. */
+  routeOverride?: RouteResult | null;
 }
 
 export default function MapView({
@@ -33,6 +38,7 @@ export default function MapView({
   activeStopIndex,
   className = "",
   mediaMarkers = [],
+  routeOverride = null,
 }: MapViewProps) {
   // Two separate refs:
   //   wrapperRef → our outer React div (safe to use, position:relative)
@@ -276,13 +282,66 @@ export default function MapView({
     mapboxMarkersRef.current = [];
     innerMarkersRef.current = [];
 
-    // Remove trip path layers
+    // Remove trip path layers (handles both road and flight overlays)
     safeRemoveLayer(map, "trip-path");
     safeRemoveLayer(map, "trip-path-animated");
+    safeRemoveLayer(map, "trip-path-flights");
     safeRemoveSource(map, "trip-path-source");
+    safeRemoveSource(map, "trip-path-flights-source");
 
-    // Draw path
-    if (mapData.path) {
+    // Draw path — prefer the road-snapped override when provided, otherwise
+    // fall back to the straight-line geometry returned by the backend.
+    if (routeOverride && (routeOverride.roadCoordinates.length > 0 || routeOverride.flightSegments.length > 0)) {
+      if (routeOverride.roadCoordinates.length > 1) {
+        map.addSource("trip-path-source", {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: { type: "LineString", coordinates: routeOverride.roadCoordinates },
+          } as GeoJSON.Feature,
+        });
+        map.addLayer({
+          id: "trip-path",
+          type: "line",
+          source: "trip-path-source",
+          paint: { "line-color": "#f59e0b", "line-width": 4, "line-opacity": 0.3, "line-blur": 3 },
+        });
+        map.addLayer({
+          id: "trip-path-animated",
+          type: "line",
+          source: "trip-path-source",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-color": "#fbbf24", "line-width": 3.5, "line-opacity": 0.9 },
+        });
+      }
+
+      if (routeOverride.flightSegments.length > 0) {
+        map.addSource("trip-path-flights-source", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: routeOverride.flightSegments.map((seg) => ({
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates: seg },
+            })),
+          } as GeoJSON.FeatureCollection,
+        });
+        map.addLayer({
+          id: "trip-path-flights",
+          type: "line",
+          source: "trip-path-flights-source",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#14b8a6",
+            "line-width": 2.5,
+            "line-opacity": 0.85,
+            "line-dasharray": [2, 2],
+          },
+        });
+      }
+    } else if (mapData.path) {
       map.addSource("trip-path-source", {
         type: "geojson",
         data: mapData.path as GeoJSON.Feature,
@@ -458,7 +517,7 @@ export default function MapView({
         { padding: 80, duration: 1500 }
       );
     }
-  }, [mapData, mapLoaded, onStopClick, safeRemoveLayer, safeRemoveSource]);
+  }, [mapData, mapLoaded, onStopClick, routeOverride, safeRemoveLayer, safeRemoveSource]);
 
   // Heatmap layer
   useEffect(() => {

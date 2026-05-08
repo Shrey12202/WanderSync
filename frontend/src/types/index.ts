@@ -47,6 +47,8 @@ export interface Stop {
   arrival_time: string | null;
   departure_time: string | null;
   sequence_order: number;
+  place_id: string | null;
+  is_airport: boolean;
   created_at: string;
   media: MediaItem[];
 }
@@ -124,6 +126,8 @@ export interface CreateStopRequest {
   arrival_time?: string;
   departure_time?: string;
   sequence_order?: number;
+  place_id?: string;
+  is_airport?: boolean;
 }
 
 export interface UpdateStopRequest {
@@ -134,6 +138,21 @@ export interface UpdateStopRequest {
   arrival_time?: string;
   departure_time?: string;
   sequence_order?: number;
+  place_id?: string;
+  is_airport?: boolean;
+}
+
+// ── Google Places (basic / Essentials fields only — free tier) ──────────────
+
+export interface GooglePlaceResult {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  place_id: string;
+  types: string[];
+  is_airport: boolean;
+  google_url?: string;
 }
 
 // ── Map data types ──────────────────────────────────────────

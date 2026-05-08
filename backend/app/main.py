@@ -64,6 +64,24 @@ async def lifespan(app: FastAPI):
                   AND m.user_id IS NULL
                   AND t.user_id IS NOT NULL;
 
+                -- 4. Add stops.place_id (Google Places id, nullable)
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'stops' AND column_name = 'place_id'
+                ) THEN
+                    ALTER TABLE stops ADD COLUMN place_id VARCHAR(255);
+                    RAISE NOTICE 'stops.place_id column added';
+                END IF;
+
+                -- 5. Add stops.is_airport (drives flight vs road routing)
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'stops' AND column_name = 'is_airport'
+                ) THEN
+                    ALTER TABLE stops ADD COLUMN is_airport BOOLEAN NOT NULL DEFAULT FALSE;
+                    RAISE NOTICE 'stops.is_airport column added';
+                END IF;
+
             END $$;
         """))
         print("✅ Schema migration complete")

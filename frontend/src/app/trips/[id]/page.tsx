@@ -9,8 +9,10 @@ import TimelineSlider from "@/components/timeline/TimelineSlider";
 import MediaGallery from "@/components/media/MediaGallery";
 import UploadHandler from "@/components/media/UploadHandler";
 import StopSlideshowModal from "@/components/media/StopSlideshowModal";
+import GooglePlacesSearch from "@/components/search/GooglePlacesSearch";
 import Link from "next/link";
 import { formatDateRange } from "@/lib/utils";
+import { getTripRoute, type RouteResult } from "@/lib/directions";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), {
   ssr: false,
@@ -33,6 +35,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [slideshowStop, setSlideshowStop] = useState<Stop | null>(null);
   const [tripMedia, setTripMedia] = useState<MediaItem[]>([]);
+  const [routeOverride, setRouteOverride] = useState<RouteResult | null>(null);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Flatten all stops from all days — use explicit null checks so lat=0 or lng=0 are preserved
@@ -71,6 +74,28 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     loadTrip();
   }, [loadTrip]);
 
+  // Resolve road / flight geometry whenever the ordered list of stops changes.
+  // Caches per leg in localStorage so a given pair is fetched at most once.
+  useEffect(() => {
+    if (allStops.length < 2) {
+      setRouteOverride(null);
+      return;
+    }
+    let cancelled = false;
+    getTripRoute(allStops)
+      .then((res) => {
+        if (!cancelled) setRouteOverride(res);
+      })
+      .catch((e) => {
+        console.warn("Route resolution failed, falling back to straight lines:", e);
+        if (!cancelled) setRouteOverride(null);
+      });
+    return () => { cancelled = true; };
+    // We intentionally serialize the stops fingerprint so identical lists don't
+    // re-trigger the effect (the array identity changes on each render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allStops.map((s) => `${s.id}:${s.latitude},${s.longitude}:${s.is_airport ? 1 : 0}`).join("|")]);
+
   // Playback logic
   useEffect(() => {
     if (isPlaying && allStops.length > 0) {
@@ -90,67 +115,38 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     };
   }, [isPlaying, allStops.length]);
 
+  // Add Stop tab state — Google-Places-driven so users only need to pick a
+  // place; lat/lng/place_id/is_airport are filled automatically.
   const [addForm, setAddForm] = useState({
     stopName: "",
-    latitude: "",
-    longitude: "",
+    latitude: null as number | null,
+    longitude: null as number | null,
+    placeId: null as string | null,
+    isAirport: false,
     arrivalTime: "",
   });
   const [addLoading, setAddLoading] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null); // Bug 1
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const skipGeocodingRef = useRef(false);
-
-  useEffect(() => {
-    if (skipGeocodingRef.current) {
-      skipGeocodingRef.current = false;
-      return;
-    }
-    if (addForm.stopName.length > 2) {
-      const fetchPlaces = async () => {
-        try {
-          const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-          const res = await fetch(
-            `https://api.mapbox.com/search/searchbox/v1/suggest?q=${encodeURIComponent(addForm.stopName)}&session_token=trips-id-session&access_token=${token}`
-          );
-          const data = await res.json();
-          if (data.suggestions) setSuggestions(data.suggestions);
-        } catch (e) {
-          console.error("Geocoding error:", e);
-        }
-      };
-      const timeoutId = setTimeout(fetchPlaces, 600);
-      return () => clearTimeout(timeoutId);
-    } else {
-      setSuggestions([]);
-    }
-  }, [addForm.stopName]);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const handleAddStop = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trip) return;
 
-    // Bug 1 — Location is mandatory
     const hasLocation =
       addForm.stopName.trim().length > 0 &&
-      addForm.latitude.trim().length > 0 &&
-      addForm.longitude.trim().length > 0;
+      addForm.latitude != null &&
+      addForm.longitude != null;
 
     if (!hasLocation) {
       setAddError("📍 Location is required — search for a place and select it from the dropdown.");
       return;
     }
     setAddError(null);
-
     setAddLoading(true);
     try {
-      // Create a day if none exist
       let dayId: string;
       if (trip.days.length === 0) {
-        const day = await createDay(trip.id, {
-          day_number: 1,
-          title: "Day 1",
-        });
+        const day = await createDay(trip.id, { day_number: 1, title: "Day 1" });
         dayId = day.id;
       } else {
         dayId = trip.days[trip.days.length - 1].id;
@@ -158,13 +154,22 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
       await createStop(dayId, {
         name: addForm.stopName || undefined,
-        latitude: addForm.latitude ? parseFloat(addForm.latitude) : undefined,
-        longitude: addForm.longitude ? parseFloat(addForm.longitude) : undefined,
+        latitude: addForm.latitude ?? undefined,
+        longitude: addForm.longitude ?? undefined,
         arrival_time: addForm.arrivalTime || undefined,
         sequence_order: allStops.length,
+        place_id: addForm.placeId ?? undefined,
+        is_airport: addForm.isAirport,
       });
 
-      setAddForm({ stopName: "", latitude: "", longitude: "", arrivalTime: "" });
+      setAddForm({
+        stopName: "",
+        latitude: null,
+        longitude: null,
+        placeId: null,
+        isAirport: false,
+        arrivalTime: "",
+      });
       await loadTrip();
     } catch (err) {
       console.error("Failed to add stop:", err);
@@ -225,6 +230,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           <MapView
             mapData={mapData}
             activeStopIndex={activeStopIndex}
+            routeOverride={routeOverride}
             onStopClick={(stopId) => {
               const idx = allStops.findIndex((s) => s.id === stopId);
               if (idx >= 0) setActiveStopIndex(idx);
@@ -305,85 +311,47 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     {addError}
                   </div>
                 )}
-                <div className="relative">
+                <div>
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    Search Location Name <span className="text-red-400">*</span>
+                    Search Location <span className="text-red-400">*</span>
                   </label>
-                  <input
-                    type="text"
-                    className={inputClass}
-                    placeholder="e.g., Starbucks, Eiffel Tower, or 123 Main St"
+                  <GooglePlacesSearch
                     value={addForm.stopName}
-                    onChange={(e) => {
-                      setAddForm({ ...addForm, stopName: e.target.value });
+                    onChange={(v) => {
+                      setAddForm((prev) => ({
+                        ...prev,
+                        stopName: v,
+                        // Clear resolved coords if the user starts editing the name
+                        ...(v !== prev.stopName ? { latitude: null, longitude: null, placeId: null, isAirport: false } : {}),
+                      }));
                       setAddError(null);
                     }}
+                    onSelect={(place) => {
+                      setAddForm((prev) => ({
+                        ...prev,
+                        stopName: place.name,
+                        latitude: place.lat,
+                        longitude: place.lng,
+                        placeId: place.place_id,
+                        isAirport: place.is_airport,
+                      }));
+                      setAddError(null);
+                    }}
+                    placeholder="e.g., Starbucks, Eiffel Tower, or 123 Main St"
+                    inputClassName={inputClass}
+                    suggestionsZIndex={9999}
                   />
-                  {suggestions.length > 0 && (
-                    <ul className="absolute z-[9999] w-full mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg max-h-48 overflow-y-auto shadow-2xl custom-scrollbar left-0" style={{ position: 'absolute' }}>
-                      {suggestions.map((suggestion, i) => (
-                        <li
-                          key={i}
-                          className="px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                          onMouseDown={async (e) => {
-                            e.preventDefault();
-                            try {
-                              const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-                              const res = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${suggestion.mapbox_id}?session_token=trips-id-session&access_token=${token}`);
-                              const data = await res.json();
-                              if (data.features && data.features.length > 0) {
-                                const feature = data.features[0];
-                                skipGeocodingRef.current = true;
-                                setAddForm({
-                                  ...addForm,
-                                  stopName: suggestion.name || feature.properties.name || suggestion.full_address,
-                                  longitude: String(feature.geometry.coordinates[0]),
-                                  latitude: String(feature.geometry.coordinates[1]),
-                                });
-                                setSuggestions([]);
-                                setAddError(null);
-                              }
-                            } catch (e) {
-                              console.error("Retrieve error:", e);
-                            }
-                          }}
-                        >
-                          <span className="font-medium block truncate">{suggestion.name || suggestion.full_address}</span>
-                          <span className="block text-[10px] text-[var(--color-text-secondary)] mt-0.5 truncate">
-                            {suggestion.full_address || suggestion.place_formatted}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                  {addForm.latitude != null && addForm.longitude != null && (
+                    <p className="text-[10px] text-[var(--color-text-secondary)] mt-1.5 flex items-center gap-2">
+                      <span className="text-teal-400">✓</span>
+                      <span>{addForm.latitude.toFixed(4)}, {addForm.longitude.toFixed(4)}</span>
+                      {addForm.isAirport && (
+                        <span className="px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300 text-[9px] font-semibold uppercase tracking-wide">
+                          ✈ Airport
+                        </span>
+                      )}
+                    </p>
                   )}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                      Latitude <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      className={inputClass}
-                      placeholder="48.8584"
-                      value={addForm.latitude}
-                      onChange={(e) => setAddForm({ ...addForm, latitude: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                      Longitude <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      className={inputClass}
-                      placeholder="2.2945"
-                      value={addForm.longitude}
-                      onChange={(e) => setAddForm({ ...addForm, longitude: e.target.value })}
-                    />
-                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
