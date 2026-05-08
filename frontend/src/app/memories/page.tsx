@@ -208,30 +208,25 @@ export default function MemoryWallPage() {
     });
     markersRef.current = [];
 
-    // Screen-space clustering so markers merge when they visually overlap
+    // Screen-space clustering: merge markers when they visually overlap.
+    // Each marker is MARKER_PX wide, so any two markers whose centers are
+    // closer than MARKER_PX must be visually overlapping and should merge.
+    // We add a small padding to also catch borders/shadows.
+    // A geographic cap is intentionally NOT applied — if two photos appear
+    // overlapped on screen at the current zoom, the user expects a single
+    // cluster. Zooming in re-runs this function via the `zoomend` listener,
+    // which automatically splits clusters once the markers no longer overlap.
+    const MARKER_PX = 56;
+    const SHADOW_PAD = 6;
     const zoom = map.getZoom();
-    const thresholdPx = Math.max(48, 78 - zoom * 4); // merge more when zoomed out (tighter than before)
-    const maxMergeKm = Math.max(35, 220 - zoom * 35); // hard geo cap so far-away places never merge
+    const thresholdPx = Math.max(MARKER_PX + SHADOW_PAD, 84 - zoom * 3);
     const groups: { lng: number; lat: number; items: MediaWithContext[]; point: { x: number; y: number } }[] = [];
-
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const haversineKm = (aLng: number, aLat: number, bLng: number, bLat: number) => {
-      const R = 6371;
-      const dLat = toRad(bLat - aLat);
-      const dLng = toRad(bLng - aLng);
-      const sa =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-      return 2 * R * Math.atan2(Math.sqrt(sa), Math.sqrt(1 - sa));
-    };
 
     media.forEach((item) => {
       if (item.latitude == null || item.longitude == null) return;
       const lngLat = new mapboxgl.LngLat(item.longitude, item.latitude);
       const p = map.project(lngLat);
       const existing = groups.find((g) => {
-        // Geographic safety check: prevent merging far-apart places at low zoom
-        if (haversineKm(g.lng, g.lat, item.longitude!, item.latitude!) > maxMergeKm) return false;
         const dx = g.point.x - p.x;
         const dy = g.point.y - p.y;
         return Math.hypot(dx, dy) < thresholdPx;
