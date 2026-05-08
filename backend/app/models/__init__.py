@@ -1,3 +1,4 @@
+from .home_location import HomeLocation
 """ORM models package."""
 
 from app.models.trip import Trip

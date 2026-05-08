@@ -229,11 +229,10 @@ export default function TripCard({ trip, onTripUpdate }: TripCardProps) {
               {formatDateRange(trip.start_date, trip.end_date)}
             </p>
 
-            {trip.description && (
-              <p className="text-sm text-[var(--color-text-secondary)] m-0 mt-2 line-clamp-2 opacity-70">
-                {trip.description}
-              </p>
-            )}
+            {/* Keep card heights consistent even when description is missing */}
+            <p className="text-sm text-[var(--color-text-secondary)] m-0 mt-2 line-clamp-2 opacity-70 min-h-[2.75rem]">
+              {trip.description || "\u00A0"}
+            </p>
 
             {/* Stats */}
             <div className="flex gap-4 mt-4 pt-3 border-t border-[var(--color-border)]">

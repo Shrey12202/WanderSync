@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/trips", label: "Dashboard", icon: "✈️" },
   { href: "/photos", label: "Media", icon: "📷" },
   { href: "/memories", label: "Memory Wall", icon: "🌍" },
+  { href: "/google-search", label: "Google", icon: "🧭" },
 ];
 
 export default function Sidebar() {

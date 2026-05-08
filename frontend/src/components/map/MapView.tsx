@@ -508,14 +508,14 @@ export default function MapView({
         type: "line",
         source: "global-paths-source",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": "rgba(0,0,0,0.55)", "line-width": 7, "line-opacity": 0.9, "line-blur": 0.5 },
+        paint: { "line-color": "rgba(0,0,0,0.35)", "line-width": 6.5, "line-opacity": 0.75, "line-blur": 0.6 },
       });
       map.addLayer({
         id: "global-paths-layer",
         type: "line",
         source: "global-paths-source",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": ["get", "color"], "line-width": 4.5, "line-opacity": 0.95 },
+        paint: { "line-color": ["get", "color"], "line-width": 4.2, "line-opacity": 0.9 },
       });
     }
   }, [globalPaths, mapLoaded, safeRemoveLayer, safeRemoveSource]);

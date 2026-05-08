@@ -18,6 +18,7 @@ import type {
   ExifData,
   MapData,
   GeoJSONFeatureCollection,
+  HomeLocation,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -233,6 +234,28 @@ export async function getAllMedia(): Promise<MediaWithContext[]> {
 
 export async function getGeotaggedMedia(): Promise<MediaWithContext[]> {
   return request<MediaWithContext[]>("/api/media/geotagged");
+}
+
+// ── Profile ──────────────────────────────────────────────────
+
+export async function getHomeLocations(): Promise<HomeLocation[]> {
+  return request<HomeLocation[]>("/api/profile/home-locations");
+}
+
+export async function addHomeLocation(data: {
+  label?: string;
+  address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}): Promise<HomeLocation> {
+  return request<HomeLocation>("/api/profile/home-locations", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteHomeLocation(id: string): Promise<void> {
+  return request<void>(`/api/profile/home-locations/${id}`, { method: "DELETE" });
 }
 
 // ── Map Data ────────────────────────────────────────────────

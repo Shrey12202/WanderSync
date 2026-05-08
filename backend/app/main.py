@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine, Base
-from app.routes import trips, days, stops, media, map_data
+from app.routes import trips, days, stops, media, map_data, profile
 
 
 @asynccontextmanager
@@ -110,6 +110,7 @@ app.include_router(days.router)
 app.include_router(stops.router)
 app.include_router(media.router)
 app.include_router(map_data.router)
+app.include_router(profile.router)
 
 
 @app.get("/api/health")

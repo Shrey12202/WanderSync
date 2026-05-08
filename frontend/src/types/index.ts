@@ -73,6 +73,16 @@ export interface MediaWithContext extends MediaItem {
   stop_name: string | null;
 }
 
+export interface HomeLocation {
+  id: string;
+  user_id: string;
+  label: string | null;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  created_at: string;
+}
+
 export interface ExifData {
   latitude: number | null;
   longitude: number | null;
