@@ -1,7 +1,9 @@
 """Day ORM model."""
 
 import uuid
-from datetime import date, datetime
+# Alias `date` so the `date` column doesn't shadow the imported type when
+# SQLAlchemy resolves `Mapped[...]` annotations.
+from datetime import date as _date, datetime
 
 from sqlalchemy import String, Text, Date, DateTime, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -20,7 +22,7 @@ class Day(Base):
         UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False
     )
     day_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date: Mapped[_date | None] = mapped_column(Date, nullable=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

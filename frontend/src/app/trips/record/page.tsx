@@ -20,6 +20,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { createTrip, createDay, createStop } from "@/lib/api";
 import { googleReverseGeocode } from "@/components/search/GooglePlacesSearch";
+import { parseGpxFile } from "@/lib/gpx";
 import type { TrackGeoJSON } from "@/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
@@ -27,7 +28,7 @@ mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 // ── Sampling thresholds ────────────────────────────────────────────────────
 
 const MIN_MOVE_M = 5;          // ignore drift smaller than this
-const MIN_ACCURACY_M = 50;     // discard fixes worse than this (urban GPS noise)
+const MIN_ACCURACY_M = 100;    // discard fixes worse than this (urban GPS noise)
 const FORCE_SAMPLE_S = 15;     // even if you stand still, log a point every N s
 
 // ── Geo helpers ────────────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ export default function RecordPage() {
   const [state, setState] = useState<RecState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [permissionPending, setPermissionPending] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
 
   // Track buffer — kept in a ref so the watchPosition callback always sees fresh state
   const trackRef = useRef<[number, number][]>([]);
@@ -103,6 +105,16 @@ export default function RecordPage() {
       antialias: true,
     });
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
+
+    // The map sometimes mounts before the `fixed inset-0` container has its
+    // final dimensions (visual viewport on iOS Safari, animations, etc.).
+    // A delayed resize forces a redraw against the real container size so
+    // the canvas isn't 0×0.
+    const resizeAfter = (ms: number) => setTimeout(() => map.resize(), ms);
+    const t1 = resizeAfter(50);
+    const t2 = resizeAfter(300);
+    const t3 = resizeAfter(1000);
+
     map.on("load", () => {
       map.addSource("track", {
         type: "geojson",
@@ -124,6 +136,9 @@ export default function RecordPage() {
     });
     mapRef.current = map;
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
       map.remove();
       mapRef.current = null;
     };
@@ -162,11 +177,15 @@ export default function RecordPage() {
     wakeLockRef.current = null;
   }, []);
 
-  // Re-acquire wake lock when the tab becomes visible again mid-recording
+  // Re-acquire wake lock + flag pause whenever the tab toggles visibility.
+  // iOS Safari (and most mobile browsers) suspend `watchPosition` while the
+  // page is hidden — we surface this to the user so they know there's a gap.
   useEffect(() => {
     if (state !== "recording") return;
     const onVis = () => {
-      if (document.visibilityState === "visible") acquireWakeLock();
+      const hidden = document.visibilityState !== "visible";
+      setIsHidden(hidden);
+      if (!hidden) acquireWakeLock();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
@@ -241,6 +260,20 @@ export default function RecordPage() {
     repaintTrack();
     if (startMarkerRef.current) { startMarkerRef.current.remove(); startMarkerRef.current = null; }
 
+    // 1. Quick one-shot lookup so the map can fly to the user before the
+    //    high-accuracy `watchPosition` cycle warms up. We don't add this
+    //    to the track — only used to bootstrap the view.
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const map = mapRef.current;
+        if (map) map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 16, duration: 1000 });
+        updateLiveMarker(pos.coords.longitude, pos.coords.latitude);
+      },
+      () => { /* ignore — watchPosition will retry */ },
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 }
+    );
+
+    // 2. Continuous high-accuracy watch — this is the actual track recorder.
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         setPermissionPending(false);
@@ -249,13 +282,12 @@ export default function RecordPage() {
         setSpeedMps(speed ?? null);
         updateLiveMarker(longitude, latitude);
 
-        // Discard noisy fixes early
-        if (accuracy != null && accuracy > MIN_ACCURACY_M) return;
-
         const now = Date.now();
         const last = trackRef.current[trackRef.current.length - 1];
         const map = mapRef.current;
 
+        // First fix — accept unconditionally so recording always starts. Even
+        // a noisy first fix is better than waiting forever in a dense city.
         if (!last) {
           trackRef.current.push([longitude, latitude]);
           setTrackLength(1);
@@ -266,13 +298,23 @@ export default function RecordPage() {
           }
           placeStartMarker(longitude, latitude);
           lastSampleAtRef.current = now;
-          if (map) map.flyTo({ center: [longitude, latitude], zoom: 16, duration: 1200 });
+          if (map) map.flyTo({ center: [longitude, latitude], zoom: 17, duration: 1200 });
           return;
         }
 
-        const moved = haversineM({ lat: last[1], lng: last[0] }, { lat: latitude, lng: longitude });
+        // Subsequent fixes — drop only if both noisy AND we already have a
+        // recent point. We let bad fixes through after FORCE_SAMPLE_S so the
+        // map keeps something to draw rather than freezing on a dead end.
         const sinceLast = (now - lastSampleAtRef.current) / 1000;
-        if (moved >= MIN_MOVE_M || sinceLast >= FORCE_SAMPLE_S) {
+        const isNoisy = accuracy != null && accuracy > MIN_ACCURACY_M;
+        if (isNoisy && sinceLast < FORCE_SAMPLE_S) return;
+
+        const moved = haversineM({ lat: last[1], lng: last[0] }, { lat: latitude, lng: longitude });
+        // Filter GPS jitter — only count movement that meaningfully exceeds
+        // the reported accuracy radius.
+        const minMove = Math.max(MIN_MOVE_M, (accuracy ?? 0) * 0.5);
+
+        if (moved >= minMove || sinceLast >= FORCE_SAMPLE_S) {
           trackRef.current.push([longitude, latitude]);
           setTrackLength(trackRef.current.length);
           setDistanceM((d) => d + (moved >= MIN_MOVE_M ? moved : 0));
@@ -321,6 +363,73 @@ export default function RecordPage() {
     setSaveTitle(s ? `Walk from ${s.split(",")[0]} — ${dateLabel}` : `Walk on ${dateLabel}`);
     setState("review");
   }, [releaseWakeLock]);
+
+  // ── Import a route from a .gpx file ────────────────────────────────────
+  // Apple Fitness, Strava, Garmin, Komoot, AllTrails, Google Maps Timeline
+  // (via Takeout) — they all export GPX. Parsed entirely in the browser; the
+  // imported track funnels into the same "review" modal as a live recording,
+  // so save/discard/UX are unchanged.
+  const handleImportGpx = useCallback(async (file: File) => {
+    setError(null);
+    try {
+      const parsed = await parseGpxFile(file);
+      if (parsed.coordinates.length < 2) {
+        setError("This GPX file has fewer than 2 points — nothing to plot.");
+        return;
+      }
+
+      // Reset any prior state, then load the imported track into the same
+      // refs/state the live recorder uses.
+      if (startMarkerRef.current) { startMarkerRef.current.remove(); startMarkerRef.current = null; }
+      if (liveMarkerRef.current) { liveMarkerRef.current.remove(); liveMarkerRef.current = null; }
+
+      trackRef.current = parsed.coordinates;
+      setTrackLength(parsed.coordinates.length);
+      setDistanceM(parsed.distanceM);
+      setElapsedS(parsed.durationS);
+      setAccuracyM(null);
+      setSpeedMps(null);
+
+      const startEpoch = parsed.startTime ? Date.parse(parsed.startTime) : Date.now();
+      setStartedAt(Number.isFinite(startEpoch) ? startEpoch : Date.now());
+
+      // Paint and fit map to the imported track bounds.
+      repaintTrack();
+      const map = mapRef.current;
+      const [firstLng, firstLat] = parsed.coordinates[0];
+      placeStartMarker(firstLng, firstLat);
+      if (map) {
+        const lngs = parsed.coordinates.map((c) => c[0]);
+        const lats = parsed.coordinates.map((c) => c[1]);
+        map.fitBounds(
+          [
+            [Math.min(...lngs), Math.min(...lats)],
+            [Math.max(...lngs), Math.max(...lats)],
+          ],
+          { padding: 60, duration: 1200, maxZoom: 17 }
+        );
+      }
+
+      // Default title from GPX name → location → date, like the live flow does.
+      const dateLabel = (parsed.startTime ? new Date(parsed.startTime) : new Date())
+        .toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      const [sLng, sLat] = parsed.coordinates[0];
+      const [eLng, eLat] = parsed.coordinates[parsed.coordinates.length - 1];
+      const [s, e] = await Promise.all([
+        googleReverseGeocode(sLat, sLng),
+        googleReverseGeocode(eLat, eLng),
+      ]);
+      setStartName(s);
+      setEndName(e);
+      setSaveTitle(
+        parsed.name?.trim() ||
+        (s ? `Walk from ${s.split(",")[0]} — ${dateLabel}` : `Walk on ${dateLabel}`)
+      );
+      setState("review");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Couldn't read that GPX file.");
+    }
+  }, [repaintTrack, placeStartMarker]);
 
   const discardAndReset = useCallback(() => {
     if (watchIdRef.current != null) {
@@ -413,19 +522,23 @@ export default function RecordPage() {
   const isAccLow = accuracyM != null && accuracyM > MIN_ACCURACY_M;
 
   return (
-    <div className="relative w-full h-[100dvh] flex flex-col bg-[var(--color-bg)] overflow-hidden">
+    // `fixed inset-0` covers the AppShell sidebar / bottom-nav so the map
+    // gets the entire viewport — critical on phones where the bottom-nav
+    // would otherwise cover the Stop button. We restore the chrome by
+    // navigating away.
+    <div className="fixed inset-0 z-[200] flex flex-col bg-[var(--color-bg)] overflow-hidden">
       <div ref={mapWrapper} className="absolute inset-0" />
 
       {/* Top bar */}
-      <div className="relative z-10 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
+      <div className="relative z-10 flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
         <button
           onClick={() => router.push("/trips")}
           className="text-white/80 hover:text-white text-sm font-medium pointer-events-auto bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10"
         >
           ← Back
         </button>
-        <h1 className="text-white text-base font-bold pointer-events-auto bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
-          🎙 Record Walk
+        <h1 className="text-white text-base font-bold pointer-events-auto bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5">
+          <span aria-hidden>🚶</span> Record Walk
         </h1>
       </div>
 
@@ -469,6 +582,13 @@ export default function RecordPage() {
         </div>
       )}
 
+      {/* Tab/screen visibility warning — phone GPS pauses while the page is hidden */}
+      {state === "recording" && isHidden && (
+        <div className="relative z-10 self-center mt-2 px-3 py-1.5 rounded-full text-[11px] font-semibold bg-red-500/25 border border-red-500/50 text-red-200 pointer-events-none">
+          ⏸ Recording paused — keep this tab open and screen unlocked
+        </div>
+      )}
+
       {/* Error banner */}
       {error && state !== "review" && (
         <div className="relative z-10 self-center mt-2 px-4 py-2 rounded-xl bg-red-500/15 border border-red-500/40 text-red-300 text-xs font-medium max-w-md text-center pointer-events-none">
@@ -480,9 +600,6 @@ export default function RecordPage() {
       <div className="absolute bottom-0 left-0 right-0 z-10 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
         {state === "idle" && (
           <>
-            <p className="text-white/70 text-xs text-center max-w-md">
-              Press start, walk around, then stop to save your route as a trip. We only read your location while you&apos;re recording.
-            </p>
             <button
               onClick={startRecording}
               disabled={permissionPending}
@@ -490,6 +607,35 @@ export default function RecordPage() {
             >
               {permissionPending ? "…" : "START"}
             </button>
+
+            <p className="text-white/65 text-[11px] text-center max-w-sm leading-relaxed m-0 mt-1">
+              <span className="text-amber-300 font-semibold">Live mode works best phone-in-hand</span> with
+              the screen on — phone browsers pause GPS the moment the page is hidden.
+            </p>
+
+            {/* GPX import — the reliable path for longer walks */}
+            <div className="w-full max-w-sm mt-1 pt-3 border-t border-white/10">
+              <p className="text-white/50 text-[10px] text-center uppercase tracking-wider m-0 mb-2">
+                Or import a route you already recorded
+              </p>
+              <label className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 border border-white/15 text-white/85 text-xs font-semibold cursor-pointer transition-all">
+                <span>📂 Choose .gpx file</span>
+                <input
+                  type="file"
+                  accept=".gpx,application/gpx+xml,application/xml,text/xml"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleImportGpx(f);
+                    // Reset so picking the same file twice still triggers onChange
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <p className="text-white/40 text-[10px] text-center m-0 mt-2 leading-relaxed">
+                Works with Apple Fitness, Strava, Google Fit, Garmin, Komoot, AllTrails — anything that exports GPX.
+              </p>
+            </div>
           </>
         )}
 

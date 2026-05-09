@@ -221,7 +221,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           </Link>
           <div className="min-w-0">
             <h1 className="text-lg md:text-xl font-bold text-[var(--color-text)] m-0 truncate flex items-center gap-2">
-              {trip.track_geojson && <span title="Live recorded walk" className="text-amber-400">🎙</span>}
+              {trip.track_geojson && <span title="Live recorded walk" className="text-amber-400">🚶</span>}
               <span className="truncate">{trip.title}</span>
             </h1>
             <p className="text-xs text-[var(--color-text-secondary)] m-0 mt-0.5">

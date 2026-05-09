@@ -57,7 +57,7 @@ export default function TripsDashboard() {
             className="px-4 py-2.5 rounded-xl bg-[var(--color-surface)] text-amber-400 border border-amber-500/30 font-semibold text-sm no-underline hover:bg-amber-500/10 transition-all flex items-center gap-2"
             title="Record a live walk with your phone's GPS"
           >
-            <span className="text-base">🎙</span> Record Walk
+            <span className="text-base">🚶</span> Record Walk
           </Link>
           <Link
             href="/trips/new"
