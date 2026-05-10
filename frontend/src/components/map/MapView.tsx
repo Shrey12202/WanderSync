@@ -3,12 +3,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { MapData, MediaItem } from "@/types";
+import type { HomeLocation, MapData, MediaItem } from "@/types";
 import type { RouteResult } from "@/lib/directions";
 import { getThumbnailUrl } from "@/lib/api";
 import StopSlideshowModal from "@/components/media/StopSlideshowModal";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+
+const STOP_MARKER_SHADOW_BASE =
+  "0 0 0 2px rgba(10,14,26,0.95), 0 1px 0 rgba(255,255,255,0.35) inset, 0 3px 10px rgba(0,0,0,0.35), 0 0 18px rgba(217,119,6,0.42)";
+const STOP_MARKER_SHADOW_HOVER =
+  "0 0 0 2px rgba(10,14,26,0.95), 0 1px 0 rgba(255,255,255,0.4) inset, 0 4px 14px rgba(0,0,0,0.4), 0 0 26px rgba(217,119,6,0.58), 0 0 12px rgba(15,148,136,0.35)";
+const STOP_MARKER_SHADOW_ACTIVE =
+  "0 0 0 2px rgba(10,14,26,0.95), 0 1px 0 rgba(255,255,255,0.45) inset, 0 4px 16px rgba(0,0,0,0.4), 0 0 28px rgba(217,119,6,0.62), 0 0 14px rgba(15,148,136,0.4)";
 
 interface MapViewProps {
   mapData?: MapData | null;
@@ -26,6 +33,8 @@ interface MapViewProps {
    *  provided, replaces the straight-line `mapData.path` rendering with a
    *  road-snapped path plus dashed lines for flight legs. */
   routeOverride?: RouteResult | null;
+  /** Saved profile addresses with coordinates — shown as a house pin */
+  homeMarkers?: HomeLocation[];
 }
 
 export default function MapView({
@@ -39,6 +48,7 @@ export default function MapView({
   className = "",
   mediaMarkers = [],
   routeOverride = null,
+  homeMarkers = [],
 }: MapViewProps) {
   // Two separate refs:
   //   wrapperRef → our outer React div (safe to use, position:relative)
@@ -49,6 +59,7 @@ export default function MapView({
   const innerMarkersRef = useRef<HTMLDivElement[]>([]);
   const mapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const mediaMapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);  // Bug 12
+  const homeMapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const spinAnimRef = useRef<number | null>(null);
   const isInteractingRef = useRef(false);
@@ -391,8 +402,8 @@ export default function MapView({
       // ────────────────────────────────────────────────────────────────────────
       const el = document.createElement("div");
       el.style.cssText = `
-        width: 28px;
-        height: 28px;
+        width: 32px;
+        height: 32px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -403,21 +414,22 @@ export default function MapView({
 
       const inner = document.createElement("div");
       inner.style.cssText = `
-        width: 28px;
-        height: 28px;
+        width: 30px;
+        height: 30px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #f59e0b, #14b8a6);
-        border: 3px solid #0a0e1a;
+        background: linear-gradient(145deg, #f0a64c 0%, #d97706 42%, #0f9488 100%);
+        border: 2px solid rgba(255, 250, 240, 0.92);
+        box-shadow: ${STOP_MARKER_SHADOW_BASE};
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 11px;
+        font-size: 12px;
         line-height: 1;
-        font-weight: 700;
+        font-weight: 800;
         font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-        color: #0a0e1a;
-        box-shadow: 0 0 12px rgba(245,158,11,0.4);
+        color: #0c1224;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
         transition: transform 0.15s ease, box-shadow 0.15s ease;
         user-select: none;
         box-sizing: border-box;
@@ -475,8 +487,8 @@ export default function MapView({
         const innerRect = inner.getBoundingClientRect();
         const wRect = wrapper?.getBoundingClientRect();
 
-        inner.style.transform = "scale(1.35)";
-        inner.style.boxShadow = "0 0 20px rgba(245,158,11,0.75)";
+        inner.style.transform = "scale(1.28)";
+        inner.style.boxShadow = STOP_MARKER_SHADOW_HOVER;
 
         if (!tip || !wrapper || !wRect) return;
         tip.innerHTML = tooltipHTML;
@@ -487,7 +499,7 @@ export default function MapView({
 
       inner.addEventListener("mouseleave", () => {
         inner.style.transform = "scale(1)";
-        inner.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
+        inner.style.boxShadow = STOP_MARKER_SHADOW_BASE;
         if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
       });
 
@@ -496,7 +508,7 @@ export default function MapView({
         // preventing the normal mouseleave from firing
         if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
         inner.style.transform = "scale(1)";
-        inner.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
+        inner.style.boxShadow = STOP_MARKER_SHADOW_BASE;
         if (onStopClick) onStopClick(props.id as string);
       });
 
@@ -567,14 +579,14 @@ export default function MapView({
         type: "line",
         source: "global-paths-source",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": "rgba(0,0,0,0.35)", "line-width": 6.5, "line-opacity": 0.75, "line-blur": 0.6 },
+        paint: { "line-color": "rgba(8,10,18,0.55)", "line-width": 7, "line-opacity": 0.82, "line-blur": 0.5 },
       });
       map.addLayer({
         id: "global-paths-layer",
         type: "line",
         source: "global-paths-source",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": ["get", "color"], "line-width": 4.2, "line-opacity": 0.9 },
+        paint: { "line-color": ["get", "color"], "line-width": 4.6, "line-opacity": 0.94 },
       });
     }
   }, [globalPaths, mapLoaded, safeRemoveLayer, safeRemoveSource]);
@@ -592,14 +604,103 @@ export default function MapView({
 
     innerMarkersRef.current.forEach((inner, i) => {
       if (i === activeStopIndex) {
-        inner.style.transform = "scale(1.4)";
-        inner.style.boxShadow = "0 0 24px rgba(245,158,11,0.8)";
+        inner.style.transform = "scale(1.32)";
+        inner.style.boxShadow = STOP_MARKER_SHADOW_ACTIVE;
       } else {
         inner.style.transform = "scale(1)";
-        inner.style.boxShadow = "0 0 12px rgba(245,158,11,0.4)";
+        inner.style.boxShadow = STOP_MARKER_SHADOW_BASE;
       }
     });
   }, [activeStopIndex, mapData]);
+
+  // Saved home addresses from profile (house icon)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    homeMapboxMarkersRef.current.forEach((m) => m.remove());
+    homeMapboxMarkersRef.current = [];
+
+    const homes = (homeMarkers ?? []).filter(
+      (h) => h.latitude != null && h.longitude != null
+    ) as (HomeLocation & { latitude: number; longitude: number })[];
+
+    const houseSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="17" height="17" fill="#0c1224" aria-hidden="true"><path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-9.19-9.2a1.5 1.5 0 00-2.12 0l-9.2 9.19a.75.75 0 101.06 1.06l8.69-8.69z"/><path d="M12 5.43l-6.75 6.75V20.25a.75.75 0 00.75.75H10.5v-4.5a.75.75 0 01.75-.75h1.5a.75.75 0 01.75.75v4.5H18a.75.75 0 00.75-.75v-8.07L12 5.43z"/></svg>`;
+
+    const esc = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    homes.forEach((loc) => {
+      const el = document.createElement("div");
+      el.style.cssText = `
+        width: 34px;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      `;
+
+      const inner = document.createElement("div");
+      inner.style.cssText = `
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #fef3c7 0%, #fcd34d 45%, #14b8a6 100%);
+        border: 2px solid rgba(255, 250, 240, 0.95);
+        box-shadow: 0 0 0 2px rgba(10,14,26,0.92), 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(245,158,11,0.35);
+        cursor: default;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        box-sizing: border-box;
+        flex-shrink: 0;
+      `;
+      inner.innerHTML = houseSvg;
+
+      const title = esc(loc.label?.trim() || "Home");
+      const tipHtml = `
+        <div style="font-size:12px;font-weight:700;color:#fbbf24;margin-bottom:4px;">🏠 ${title}</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.65);line-height:1.35;">${esc(loc.address)}</div>
+      `;
+
+      inner.addEventListener("mouseenter", () => {
+        inner.style.transform = "scale(1.12)";
+        inner.style.boxShadow =
+          "0 0 0 2px rgba(10,14,26,0.92), 0 3px 12px rgba(0,0,0,0.4), 0 0 20px rgba(245,158,11,0.5)";
+        const tip = tooltipRef.current;
+        const wrapper = wrapperRef.current;
+        if (!tip || !wrapper) return;
+        const innerRect = inner.getBoundingClientRect();
+        const wRect = wrapper.getBoundingClientRect();
+        tip.innerHTML = tipHtml;
+        tip.style.opacity = "1";
+        tip.style.left = `${innerRect.left - wRect.left + innerRect.width / 2}px`;
+        tip.style.top = `${innerRect.top - wRect.top}px`;
+      });
+
+      inner.addEventListener("mouseleave", () => {
+        inner.style.transform = "scale(1)";
+        inner.style.boxShadow =
+          "0 0 0 2px rgba(10,14,26,0.92), 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(245,158,11,0.35)";
+        if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
+      });
+
+      el.appendChild(inner);
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center", pitchAlignment: "map" })
+        .setLngLat([loc.longitude, loc.latitude])
+        .addTo(map);
+      homeMapboxMarkersRef.current.push(marker);
+    });
+
+    return () => {
+      homeMapboxMarkersRef.current.forEach((m) => m.remove());
+      homeMapboxMarkersRef.current = [];
+    };
+  }, [homeMarkers, mapLoaded]);
 
   // Bug 12 & Feature — render clustered photo markers on the map
   useEffect(() => {

@@ -13,6 +13,8 @@ import GooglePlacesSearch from "@/components/search/GooglePlacesSearch";
 import Link from "next/link";
 import { formatDateRange } from "@/lib/utils";
 import { getTripRoute, type RouteResult } from "@/lib/directions";
+import { useHomeLocations } from "@/context/HomeLocationsContext";
+import { googleReverseGeocode } from "@/lib/googleGeocode";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), {
   ssr: false,
@@ -24,6 +26,7 @@ const MapView = dynamic(() => import("@/components/map/MapView"), {
 });
 
 export default function TripDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { homeLocations } = useHomeLocations();
   const resolvedParams = use(params);
   const router = useRouter();
   const [trip, setTrip] = useState<TripDetail | null>(null);
@@ -132,6 +135,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
 
   const handleAddStop = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,7 +147,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       addForm.longitude != null;
 
     if (!hasLocation) {
-      setAddError("📍 Location is required — search for a place and select it from the dropdown.");
+      setAddError(
+        "📍 Add a location: search and pick a result, use “Drop a pin on the map”, or “Use my current location”."
+      );
       return;
     }
     setAddError(null);
@@ -182,6 +188,45 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     } finally {
       setAddLoading(false);
     }
+  };
+
+  const fillStopFromGeolocation = () => {
+    if (!navigator.geolocation) {
+      setAddError("Your browser does not support geolocation.");
+      return;
+    }
+    setGeoLoading(true);
+    setAddError(null);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        let stopName = "";
+        const addr = await googleReverseGeocode(lat, lng);
+        if (addr) stopName = addr.length > 140 ? `${addr.slice(0, 137)}…` : addr;
+        if (!stopName.trim()) stopName = "Here (rename me)";
+        setAddForm((prev) => ({
+          ...prev,
+          stopName,
+          latitude: lat,
+          longitude: lng,
+          placeId: `gps:${lat.toFixed(6)},${lng.toFixed(6)}`,
+          isAirport: false,
+        }));
+        setGeoLoading(false);
+      },
+      (err) => {
+        setGeoLoading(false);
+        const msg =
+          err.code === 1
+            ? "Location permission denied — allow location for this site in your browser, or use search / map pin."
+            : err.code === 2
+              ? "Position unavailable. Try again or use map pin."
+              : "Could not read GPS in time. Try outdoors, widen browser permissions, or use map pin.";
+        setAddError(msg);
+      },
+      { enableHighAccuracy: true, timeout: 22_000, maximumAge: 60_000 }
+    );
   };
 
   if (loading) {
@@ -248,6 +293,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
             mapData={mapData}
             activeStopIndex={activeStopIndex}
             routeOverride={routeOverride}
+            homeMarkers={homeLocations}
             onStopClick={(stopId) => {
               const idx = allStops.findIndex((s) => s.id === stopId);
               if (idx >= 0) setActiveStopIndex(idx);
@@ -330,17 +376,16 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                 )}
                 <div>
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    Search Location <span className="text-red-400">*</span>
+                    Stop name and location <span className="text-red-400">*</span>
                   </label>
+                  <p className="text-[10px] text-[var(--color-text-secondary)] m-0 mb-1.5 leading-relaxed">
+                    Search Google, drop a pin (link under the field), or use GPS below. You can always edit the stop name after coordinates are set.
+                  </p>
                   <GooglePlacesSearch
+                    homeLocations={homeLocations}
                     value={addForm.stopName}
                     onChange={(v) => {
-                      setAddForm((prev) => ({
-                        ...prev,
-                        stopName: v,
-                        // Clear resolved coords if the user starts editing the name
-                        ...(v !== prev.stopName ? { latitude: null, longitude: null, placeId: null, isAirport: false } : {}),
-                      }));
+                      setAddForm((prev) => ({ ...prev, stopName: v }));
                       setAddError(null);
                     }}
                     onSelect={(place) => {
@@ -370,6 +415,21 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                     </p>
                   )}
                 </div>
+
+                <div className="rounded-xl border border-teal-500/25 bg-teal-500/5 p-3 space-y-2">
+                  <p className="text-[11px] text-[var(--color-text-secondary)] m-0 leading-relaxed">
+                    At a spot Google does not list? With location turned on, save this device’s coordinates and give the stop your own name (edit the field above after we fill a draft).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={fillStopFromGeolocation}
+                    disabled={geoLoading || addLoading}
+                    className="w-full py-2 rounded-lg text-xs font-semibold border border-teal-500/40 text-teal-300 hover:bg-teal-500/15 transition-colors disabled:opacity-40"
+                  >
+                    {geoLoading ? "Reading GPS…" : "Use my current location"}
+                  </button>
+                </div>
+
                 <div>
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
                     Arrival Date

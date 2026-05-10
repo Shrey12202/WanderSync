@@ -3,7 +3,9 @@
 import type { MediaItem } from "@/types";
 import { getMediaUrl, getThumbnailUrl, updateMedia, deleteMedia } from "@/lib/api";
 import { useState, useEffect, useCallback } from "react";
-import GooglePlacesSearch, { googleReverseGeocode } from "@/components/search/GooglePlacesSearch";
+import GooglePlacesSearch from "@/components/search/GooglePlacesSearch";
+import { googleReverseGeocode } from "@/lib/googleGeocode";
+import { useHomeLocations } from "@/context/HomeLocationsContext";
 
 interface MediaGalleryProps {
   media: MediaItem[];
@@ -12,6 +14,7 @@ interface MediaGalleryProps {
 }
 
 export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: MediaGalleryProps) {
+  const { homeLocations } = useHomeLocations();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -334,6 +337,7 @@ export default function MediaGallery({ media, onMediaUpdate, onMediaClick }: Med
                   <div>
                     <label className="text-white/50 text-[10px] font-semibold block mb-1">📍 Search Location</label>
                     <GooglePlacesSearch
+                      homeLocations={homeLocations}
                       value={editSearch}
                       onChange={setEditSearch}
                       onSelect={(place) => {

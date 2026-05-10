@@ -1,24 +1,39 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTrips, getAllMedia } from "@/lib/api";
+import dynamic from "next/dynamic";
+import { getTrips, getAllMedia, getGlobalPaths } from "@/lib/api";
 import type { TripSummary } from "@/types";
 import TripCard from "@/components/trips/TripCard";
 import Link from "next/link";
+import { useHomeLocations } from "@/context/HomeLocationsContext";
+
+const DashboardMap = dynamic(() => import("@/components/map/MapView"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full min-h-[220px] bg-[var(--color-surface)] animate-pulse flex items-center justify-center rounded-2xl">
+      <span className="text-[var(--color-text-secondary)] text-sm">Loading map…</span>
+    </div>
+  ),
+});
 
 export default function TripsDashboard() {
+  const { homeLocations } = useHomeLocations();
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalMediaCount, setTotalMediaCount] = useState(0); // Bug 3 — true total incl. standalone
+  const [globalPaths, setGlobalPaths] = useState<unknown | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
         // Bug 3 — fetch trips AND all media concurrently so photo count includes standalones
-        const [tripsData, allMedia] = await Promise.all([
+        const [tripsData, allMedia, pathsData] = await Promise.all([
           getTrips(),
           getAllMedia().catch(() => []),
+          getGlobalPaths().catch(() => null),
         ]);
+        setGlobalPaths(pathsData);
         // Sort by trip date (start_date/end_date) rather than "last added"
         setTrips(
           [...tripsData].sort((a, b) => {
@@ -30,6 +45,7 @@ export default function TripsDashboard() {
         setTotalMediaCount(allMedia.length);
       } catch (err) {
         console.error("Failed to load dashboard:", err);
+        setGlobalPaths(null);
       } finally {
         setLoading(false);
       }
@@ -66,6 +82,15 @@ export default function TripsDashboard() {
             + New Trip
           </Link>
         </div>
+      </div>
+
+      <div className="h-[min(22rem,42vh)] w-full rounded-2xl overflow-hidden border border-[var(--color-border)] mb-8 shadow-lg shadow-black/20">
+        <DashboardMap
+          globalPaths={globalPaths}
+          homeMarkers={homeLocations}
+          spinGlobe={false}
+          className="h-full min-h-[220px]"
+        />
       </div>
 
       {/* Stats */}
@@ -126,10 +151,17 @@ export default function TripsDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {trips.map((trip) => (
               <TripCard key={trip.id} trip={trip} onTripUpdate={() => {
-                // Reload trips and media count after any change
                 setLoading(true);
-                Promise.all([getTrips(), getAllMedia().catch(() => [])])
-                  .then(([t, m]) => { setTrips(t); setTotalMediaCount(m.length); })
+                Promise.all([getTrips(), getAllMedia().catch(() => []), getGlobalPaths().catch(() => null)])
+                  .then(([t, m, p]) => {
+                    setTrips([...t].sort((a, b) => {
+                      const aTime = Date.parse(a.start_date ?? a.end_date ?? a.created_at);
+                      const bTime = Date.parse(b.start_date ?? b.end_date ?? b.created_at);
+                      return (isNaN(bTime) ? 0 : bTime) - (isNaN(aTime) ? 0 : aTime);
+                    }));
+                    setTotalMediaCount(m.length);
+                    setGlobalPaths(p);
+                  })
                   .catch(console.error)
                   .finally(() => setLoading(false));
               }} />

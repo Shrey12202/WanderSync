@@ -3,6 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import Sidebar from "@/components/layout/Sidebar";
 import TokenProvider from "@/components/auth/TokenProvider";
+import { HomeLocationsProvider } from "@/context/HomeLocationsContext";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { isSignedIn, isLoaded } = useAuth();
@@ -18,19 +19,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!isSignedIn) {
-    // Full-screen layout for sign-in / sign-up pages
-    return <div className="min-h-screen">{children}</div>;
-  }
-
   return (
-    <>
-      <TokenProvider />
-      {/* Use lg breakpoint for desktop sidebar so phones (even landscape) keep bottom nav */}
-      <div className="flex flex-col-reverse lg:flex-row h-[100dvh] overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto relative">{children}</main>
-      </div>
-    </>
+    <HomeLocationsProvider signedIn={!!isSignedIn}>
+      {!isSignedIn ? (
+        <div className="min-h-screen">{children}</div>
+      ) : (
+        <>
+          <TokenProvider />
+          {/* Use lg breakpoint for desktop sidebar so phones (even landscape) keep bottom nav */}
+          <div className="flex flex-col-reverse lg:flex-row h-[100dvh] overflow-hidden">
+            <Sidebar />
+            <main className="flex-1 overflow-y-auto relative">{children}</main>
+          </div>
+        </>
+      )}
+    </HomeLocationsProvider>
   );
 }

@@ -1,13 +1,16 @@
 "use client";
 
 import { useUser, useClerk } from "@clerk/nextjs";
-import { useEffect, useMemo, useState } from "react";
-import { addHomeLocation, deleteHomeLocation, getHomeLocations } from "@/lib/api";
-import type { HomeLocation } from "@/types";
+import { useMemo, useState } from "react";
+import { addHomeLocation, deleteHomeLocation } from "@/lib/api";
+import GooglePlacesSearch from "@/components/search/GooglePlacesSearch";
+import { useHomeLocations } from "@/context/HomeLocationsContext";
+import type { GooglePlaceResult } from "@/types";
 
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
   const { signOut } = useClerk();
+  const { homeLocations, homesLoading, reloadHomes } = useHomeLocations();
   const [changingPassword, setChangingPassword] = useState(false);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -15,13 +18,11 @@ export default function ProfilePage() {
   const [pwStatus, setPwStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [homeLocations, setHomeLocations] = useState<HomeLocation[]>([]);
-  const [homeLoading, setHomeLoading] = useState(false);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [homeLabel, setHomeLabel] = useState("");
-  const [homeAddress, setHomeAddress] = useState("");
-  const [homeLat, setHomeLat] = useState("");
-  const [homeLng, setHomeLng] = useState("");
+  const [homeSearchQuery, setHomeSearchQuery] = useState("");
+  const [homePlacePicked, setHomePlacePicked] = useState<GooglePlaceResult | null>(null);
+  const [homeSaving, setHomeSaving] = useState(false);
 
   if (!isLoaded) {
     return (
@@ -65,42 +66,28 @@ export default function ProfilePage() {
   const homeInputClass =
     "w-full px-4 py-2.5 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:border-amber-500/50";
 
-  const canSaveHome = useMemo(() => {
-    if (homeAddress.trim().length < 3) return false;
-    if (homeLat && isNaN(parseFloat(homeLat))) return false;
-    if (homeLng && isNaN(parseFloat(homeLng))) return false;
-    return true;
-  }, [homeAddress, homeLat, homeLng]);
-
-  useEffect(() => {
-    let mounted = true;
-    setHomeLoading(true);
-    setHomeError(null);
-    getHomeLocations()
-      .then((rows) => { if (mounted) setHomeLocations(rows); })
-      .catch(() => { if (mounted) setHomeError("Failed to load home locations."); })
-      .finally(() => { if (mounted) setHomeLoading(false); });
-    return () => { mounted = false; };
-  }, []);
+  const canSaveHome = useMemo(() => homePlacePicked != null, [homePlacePicked]);
 
   const handleAddHome = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSaveHome) return;
-    setHomeLoading(true);
+    if (!homePlacePicked) return;
+    setHomeSaving(true);
     setHomeError(null);
     try {
-      const created = await addHomeLocation({
+      await addHomeLocation({
         label: homeLabel.trim() || undefined,
-        address: homeAddress.trim(),
-        latitude: homeLat ? parseFloat(homeLat) : null,
-        longitude: homeLng ? parseFloat(homeLng) : null,
+        address: homePlacePicked.address,
+        latitude: homePlacePicked.lat,
+        longitude: homePlacePicked.lng,
       });
-      setHomeLocations((prev) => [created, ...prev]);
-      setHomeLabel(""); setHomeAddress(""); setHomeLat(""); setHomeLng("");
+      setHomeLabel("");
+      setHomeSearchQuery("");
+      setHomePlacePicked(null);
+      await reloadHomes();
     } catch {
       setHomeError("Failed to save home location.");
     } finally {
-      setHomeLoading(false);
+      setHomeSaving(false);
     }
   };
 
@@ -149,11 +136,14 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Home locations */}
+      {/* Home locations — saved addresses show as 🏠 on Map, Dashboard, and place search */}
       <div className="glass border border-[var(--color-border)] rounded-3xl p-6 mb-6">
-        <h3 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-widest m-0 mb-4">
-          Home Locations
+        <h3 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-widest m-0 mb-1">
+          Home addresses
         </h3>
+        <p className="text-xs text-[var(--color-text-secondary)] m-0 mb-4">
+          Add one or more places you call home. They appear as a house icon on the Map and Trips dashboard, and show at the top of location search when the text matches.
+        </p>
 
         {homeError && (
           <div className="mb-4 p-3 rounded-xl text-sm border bg-red-500/10 border-red-500/20 text-red-400">
@@ -161,41 +151,54 @@ export default function ProfilePage() {
           </div>
         )}
 
-        <form onSubmit={handleAddHome} className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="md:col-span-1">
+        <form onSubmit={handleAddHome} className="space-y-3">
+          <div>
             <label className="text-xs text-[var(--color-text-secondary)] mb-1 block">Label (optional)</label>
-            <input value={homeLabel} onChange={(e) => setHomeLabel(e.target.value)} className={homeInputClass} placeholder="Home / Parents / Office" />
-          </div>
-          <div className="md:col-span-1">
-            <label className="text-xs text-[var(--color-text-secondary)] mb-1 block">Address</label>
-            <input value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} className={homeInputClass} placeholder="Street, City, Country" required />
+            <input value={homeLabel} onChange={(e) => setHomeLabel(e.target.value)} className={homeInputClass} placeholder="Home, Parents, Office…" />
           </div>
           <div>
-            <label className="text-xs text-[var(--color-text-secondary)] mb-1 block">Latitude (optional)</label>
-            <input value={homeLat} onChange={(e) => setHomeLat(e.target.value)} className={homeInputClass} placeholder="23.0225" inputMode="decimal" />
-          </div>
-          <div>
-            <label className="text-xs text-[var(--color-text-secondary)] mb-1 block">Longitude (optional)</label>
-            <input value={homeLng} onChange={(e) => setHomeLng(e.target.value)} className={homeInputClass} placeholder="72.5714" inputMode="decimal" />
+            <label className="text-xs text-[var(--color-text-secondary)] mb-1 block">Address — search and pick a result</label>
+            <GooglePlacesSearch
+              homeLocations={homeLocations}
+              value={homeSearchQuery}
+              onChange={(v) => {
+                setHomeSearchQuery(v);
+                setHomePlacePicked((prev) => {
+                  if (!prev) return null;
+                  if (v.trim() === prev.name.trim() || v.trim() === prev.address.trim()) return prev;
+                  return null;
+                });
+              }}
+              onSelect={(place) => {
+                setHomePlacePicked(place);
+                setHomeSearchQuery(place.name);
+                setHomeError(null);
+              }}
+              placeholder="Start typing your street or city…"
+              suggestionsZIndex={100}
+            />
+            {homePlacePicked && (
+              <p className="text-[10px] text-teal-400 mt-1.5 m-0">
+                ✓ Coordinates saved with this address — it will show on your maps.
+              </p>
+            )}
           </div>
 
-          <div className="md:col-span-2 flex gap-3">
-            <button
-              type="submit"
-              disabled={!canSaveHome || homeLoading}
-              className="flex-1 py-2.5 rounded-xl bg-amber-500 text-[#0a0e1a] font-bold text-sm hover:bg-amber-400 transition-all disabled:opacity-50"
-            >
-              {homeLoading ? "Saving..." : "+ Add Home Location"}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={!canSaveHome || homeSaving}
+            className="w-full py-2.5 rounded-xl bg-amber-500 text-[#0a0e1a] font-bold text-sm hover:bg-amber-400 transition-all disabled:opacity-50"
+          >
+            {homeSaving ? "Saving..." : "+ Add home address"}
+          </button>
         </form>
 
         <div className="mt-5">
-          {homeLoading && homeLocations.length === 0 ? (
+          {homesLoading && homeLocations.length === 0 ? (
             <p className="text-sm text-[var(--color-text-secondary)] m-0">Loading…</p>
           ) : homeLocations.length === 0 ? (
             <p className="text-sm text-[var(--color-text-secondary)] m-0">
-              Add one or more addresses you consider “home”.
+              No saved homes yet.
             </p>
           ) : (
             <div className="flex flex-col gap-2">
@@ -205,7 +208,8 @@ export default function ProfilePage() {
                   className="flex items-start justify-between gap-3 p-3 rounded-2xl bg-[var(--color-bg)] border border-[var(--color-border)]"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[var(--color-text)] m-0 truncate">
+                    <p className="text-sm font-semibold text-[var(--color-text)] m-0 truncate flex items-center gap-1.5">
+                      <span aria-hidden>🏠</span>
                       {loc.label || "Home"}
                     </p>
                     <p className="text-xs text-[var(--color-text-secondary)] m-0 mt-1 break-words">
@@ -218,16 +222,17 @@ export default function ProfilePage() {
                     )}
                   </div>
                   <button
+                    type="button"
                     onClick={async () => {
-                      setHomeLoading(true);
+                      setHomeSaving(true);
                       setHomeError(null);
                       try {
                         await deleteHomeLocation(loc.id);
-                        setHomeLocations((prev) => prev.filter((x) => x.id !== loc.id));
+                        await reloadHomes();
                       } catch {
                         setHomeError("Failed to delete home location.");
                       } finally {
-                        setHomeLoading(false);
+                        setHomeSaving(false);
                       }
                     }}
                     className="shrink-0 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-semibold hover:bg-red-500/20 transition-all"

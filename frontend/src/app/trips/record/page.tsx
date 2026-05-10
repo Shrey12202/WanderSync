@@ -19,7 +19,7 @@ import { useRouter } from "next/navigation";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { createTrip, createDay, createStop } from "@/lib/api";
-import { googleReverseGeocode } from "@/components/search/GooglePlacesSearch";
+import { googleReverseGeocode } from "@/lib/googleGeocode";
 import { parseGpxFile } from "@/lib/gpx";
 import type { TrackGeoJSON } from "@/types";
 

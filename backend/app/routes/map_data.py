@@ -192,18 +192,18 @@ async def get_global_paths(
             trip_paths[stop.trip_id] = []
         trip_paths[stop.trip_id].append([stop.longitude, stop.latitude])
 
-    # Softer, cohesive palette (still distinct when zoomed out)
+    # Distinct jewel tones — readable on dark maps, clearly separated, not neon
     colors = [
-        "#4EA8DE",  # soft blue
-        "#F4A261",  # warm orange
-        "#2A9D8F",  # teal
-        "#E76F51",  # coral
-        "#8E7CC3",  # lavender
-        "#E9C46A",  # sand
-        "#6D597A",  # muted purple
-        "#84A59D",  # sage
-        "#D4A5A5",  # dusty rose
-        "#577590",  # slate blue
+        "#2563EB",  # blue-600
+        "#EA580C",  # orange-600
+        "#0F766E",  # teal-700
+        "#C2410C",  # burnt orange
+        "#7C3AED",  # violet-600
+        "#B45309",  # amber-700
+        "#4F46E5",  # indigo-600
+        "#047857",  # emerald-700
+        "#BE185D",  # rose-700
+        "#0369A1",  # sky-700
     ]
 
     features = []

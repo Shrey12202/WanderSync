@@ -3,7 +3,9 @@
 import { useState, useCallback, useEffect } from "react";
 import { uploadMedia, extractExif, getTrip } from "@/lib/api";
 import type { ExifData, MediaItem, Stop } from "@/types";
-import GooglePlacesSearch, { googleReverseGeocode } from "@/components/search/GooglePlacesSearch";
+import GooglePlacesSearch from "@/components/search/GooglePlacesSearch";
+import { googleReverseGeocode } from "@/lib/googleGeocode";
+import { useHomeLocations } from "@/context/HomeLocationsContext";
 
 interface UploadHandlerProps {
   tripId?: string;                // Optional — standalone uploads allowed
@@ -17,6 +19,7 @@ interface UploadHandlerProps {
 }
 
 export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, tripStartDate, tripEndDate, onUploadComplete, onStopSelected }: UploadHandlerProps) {
+  const { homeLocations } = useHomeLocations();
   const [file, setFile] = useState<File | null>(null);
   const [step, setStep] = useState<"idle" | "analyzing" | "confirm" | "uploading">("idle");
   const [exif, setExif] = useState<ExifData | null>(null);
@@ -236,6 +239,7 @@ export default function UploadHandler({ tripId, stopId, defaultLat, defaultLng, 
             📍 Location <span className="text-red-400">*</span>{selectedExistingStopId !== "none" && selectedExistingStopId ? " (auto-filled)" : ""}
           </label>
           <GooglePlacesSearch
+            homeLocations={homeLocations}
             value={searchQuery}
             onChange={(v) => {
               setSearchQuery(v);

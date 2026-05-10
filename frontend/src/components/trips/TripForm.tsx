@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createTrip, createDay, createStop } from "@/lib/api";
 import type { CreateTripRequest } from "@/types";
 import GooglePlacesSearch from "@/components/search/GooglePlacesSearch";
+import { useHomeLocations } from "@/context/HomeLocationsContext";
 
 interface ItineraryStop {
   name: string;
@@ -18,6 +19,7 @@ const TITLE_MAX = 100;
 const DESC_MAX = 500;
 
 export default function TripForm() {
+  const { homeLocations } = useHomeLocations();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -208,6 +210,7 @@ export default function TripForm() {
         )}
 
         <GooglePlacesSearch
+          homeLocations={homeLocations}
           value={searchQuery}
           onChange={setSearchQuery}
           onSelect={(place) => {

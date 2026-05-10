@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getHeatmapData, getGlobalPaths } from "@/lib/api";
 import type { GeoJSONFeatureCollection } from "@/types";
 import dynamic from "next/dynamic";
+import { useHomeLocations } from "@/context/HomeLocationsContext";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), {
   ssr: false,
@@ -15,6 +16,7 @@ const MapView = dynamic(() => import("@/components/map/MapView"), {
 });
 
 export default function HomeMap() {
+  const { homeLocations } = useHomeLocations();
   const [heatmapData, setHeatmapData] = useState<GeoJSONFeatureCollection | null>(null);
   const [globalPaths, setGlobalPaths] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,6 +99,7 @@ export default function HomeMap() {
           showHeatmap={showHeatmap}
           globalPaths={globalPaths}
           spinGlobe={isGlobeView}
+          homeMarkers={homeLocations}
         />
       </div>
     </div>
