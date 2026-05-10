@@ -18,8 +18,38 @@ function getResponsiveFlatZoom(): number {
   if (w < 640) return 1.18;
   if (w < 900) return 1.34;
   if (w < 1280) return 1.5;
-  if (w < 1920) return 1.66;
-  return 1.82;
+  if (w < 1920) return 1.72;
+  if (w < 2560) return 1.88;
+  return 2.02;
+}
+
+/** Dashboard scatter: tighter inset on big monitors reads as less “whole world zoom out”. */
+function getScatterFitPadding(): number {
+  if (typeof window === "undefined") return 76;
+  const w = window.innerWidth;
+  const pct = Math.min(168, Math.max(40, Math.round(w * 0.068)));
+  return pct;
+}
+
+function getScatterFitMaxZoom(): number {
+  if (typeof window === "undefined") return 11.75;
+  const w = window.innerWidth;
+  if (w >= 2560) return 13;
+  if (w >= 1920) return 12.35;
+  if (w >= 1440) return 11.85;
+  return 11.4;
+}
+
+/** After fitBounds, nudge zoom in slightly on very wide canvases only when geography is continental. */
+function getWideScreenScatterZoomBoost(lngSpan: number, latSpan: number): number {
+  if (typeof window === "undefined") return 0;
+  const w = window.innerWidth;
+  const isWideTrip = lngSpan > 85 || latSpan > 55;
+  if (!isWideTrip) return 0;
+  if (w >= 2400) return 0.6;
+  if (w >= 1920) return 0.45;
+  if (w >= 1600) return 0.28;
+  return 0;
 }
 
 /** Slight globe zoom bump on large displays. */
@@ -61,6 +91,12 @@ interface MapViewProps {
   allStopsScatter?: GeoJSONFeatureCollection | null;
   /** When false, map is view-only (no pan/zoom controls; globe keeps auto-spin). */
   mapInteractive?: boolean;
+  /** Trips dashboard: strip global route lines even if caller passed stale props; frees map for dots only */
+  omitGlobalRouteLines?: boolean;
+  /** Smaller oval home pin (dashboard) vs full house badge (map tab). */
+  compactHomeMarkers?: boolean;
+  /** “You are here” — rendered as Google-style blue accuracy dot when set */
+  currentLocation?: { lng: number; lat: number } | null;
 }
 
 export default function MapView({
@@ -77,6 +113,9 @@ export default function MapView({
   homeMarkers = [],
   allStopsScatter = null,
   mapInteractive = true,
+  omitGlobalRouteLines = false,
+  compactHomeMarkers = false,
+  currentLocation = null,
 }: MapViewProps) {
   // Two separate refs:
   //   wrapperRef → our outer React div (safe to use, position:relative)
@@ -88,6 +127,7 @@ export default function MapView({
   const mapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const mediaMapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);  // Bug 12
   const homeMapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const spinAnimRef = useRef<number | null>(null);
   const isInteractingRef = useRef(false);
@@ -611,6 +651,8 @@ export default function MapView({
     safeRemoveLayer(map, "global-paths-outline-layer");
     safeRemoveSource(map, "global-paths-source");
 
+    if (omitGlobalRouteLines) return;
+
     if (globalPaths && globalPaths.features?.length > 0) {
       map.addSource("global-paths-source", { type: "geojson", data: globalPaths });
       // Dark outline for contrast at low zoom
@@ -629,9 +671,9 @@ export default function MapView({
         paint: { "line-color": ["get", "color"], "line-width": 4.6, "line-opacity": 0.94 },
       });
     }
-  }, [globalPaths, mapLoaded, safeRemoveLayer, safeRemoveSource]);
+  }, [globalPaths, omitGlobalRouteLines, mapLoaded, safeRemoveLayer, safeRemoveSource]);
 
-  // Dashboard: all stops as colored dots (no route lines)
+  // Dashboard: all stops as colored dots (omitGlobalRouteLines) + framed with homes / GPS when present
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
@@ -639,6 +681,91 @@ export default function MapView({
     safeRemoveLayer(map, "all-stops-dot");
     safeRemoveLayer(map, "all-stops-halo");
     safeRemoveSource(map, "all-stops-scatter");
+
+    const dashboardFitMode = omitGlobalRouteLines && !mapData && !spinGlobe;
+
+    const homesPts = (homeMarkers ?? []).filter(
+      (h) => h.latitude != null && h.longitude != null
+    ) as { latitude: number; longitude: number }[];
+
+    let resizeT: number | undefined;
+    let zoomBoostT: number | undefined;
+
+    const runDashboardFit = () => {
+      if (!dashboardFitMode) return;
+      if (zoomBoostT !== undefined) {
+        clearTimeout(zoomBoostT);
+        zoomBoostT = undefined;
+      }
+
+      const lngs: number[] = [];
+      const lats: number[] = [];
+
+      if (allStopsScatter?.features?.length) {
+        for (const x of allStopsScatter.features) {
+          if (x.geometry?.type !== "Point") continue;
+          const c = (x.geometry as { type: "Point"; coordinates: [number, number] }).coordinates;
+          lngs.push(c[0]);
+          lats.push(c[1]);
+        }
+      }
+      for (const h of homesPts) {
+        lngs.push(h.longitude);
+        lats.push(h.latitude);
+      }
+      if (currentLocation) {
+        lngs.push(currentLocation.lng);
+        lats.push(currentLocation.lat);
+      }
+
+      if (lngs.length === 0) return;
+
+      const padLon = lngs.length > 1 ? 0.035 : 0.18;
+      const padLat = lats.length > 1 ? 0.035 : 0.12;
+      const minLng = Math.min(...lngs) - padLon;
+      const maxLng = Math.max(...lngs) + padLon;
+      const minLat = Math.min(...lats) - padLat;
+      const maxLat = Math.max(...lats) + padLat;
+      const lngSpan = maxLng - minLng;
+      const latSpan = maxLat - minLat;
+      const pxPad = getScatterFitPadding();
+      const maxZ = getScatterFitMaxZoom();
+      const zoomBoost = getWideScreenScatterZoomBoost(lngSpan, latSpan);
+
+      if (lngs.length === 1 && lats.length === 1) {
+        const w = typeof window !== "undefined" ? window.innerWidth : 1280;
+        const zoomOne =
+          w >= 2560 ? 10.6 : w >= 1920 ? 10.2 : w >= 1440 ? 9.95 : w >= 1024 ? 9.65 : 9.35;
+        map.flyTo({
+          center: [lngs[0], lats[0]],
+          zoom: Math.min(maxZ - 1, zoomOne),
+          duration: 720,
+        });
+      } else {
+        map.fitBounds(
+          [
+            [minLng, minLat],
+            [maxLng, maxLat],
+          ] as mapboxgl.LngLatBoundsLike,
+          { padding: pxPad, duration: 780, maxZoom: maxZ }
+        );
+        if (zoomBoost > 0 && typeof window !== "undefined") {
+          if (zoomBoostT !== undefined) clearTimeout(zoomBoostT);
+          zoomBoostT = window.setTimeout(() => {
+            zoomBoostT = undefined;
+            if (mapRef.current !== map || !map) return;
+            const z = map.getZoom();
+            map.easeTo({ zoom: Math.min(maxZ, z + zoomBoost), duration: 480 });
+          }, 840);
+        }
+      }
+    };
+
+    const onResize = () => {
+      if (!dashboardFitMode) return;
+      if (resizeT !== undefined) clearTimeout(resizeT);
+      resizeT = window.setTimeout(runDashboardFit, 180);
+    };
 
     let popup: mapboxgl.Popup | null = null;
     let scatterListenersAttached = false;
@@ -669,7 +796,10 @@ export default function MapView({
     };
 
     if (allStopsScatter && allStopsScatter.features?.length > 0) {
-      map.addSource("all-stops-scatter", { type: "geojson", data: allStopsScatter });
+      map.addSource("all-stops-scatter", {
+        type: "geojson",
+        data: allStopsScatter as unknown as GeoJSON.FeatureCollection,
+      });
       map.addLayer({
         id: "all-stops-halo",
         type: "circle",
@@ -698,27 +828,20 @@ export default function MapView({
       map.on("mouseenter", "all-stops-dot", onEnter);
       map.on("mouseleave", "all-stops-dot", onLeave);
       scatterListenersAttached = true;
+    }
 
-      if (!mapData && allStopsScatter.features.length > 0) {
-        const coords = allStopsScatter.features
-          .filter((x) => x.geometry?.type === "Point")
-          .map((x) => (x.geometry as { type: "Point"; coordinates: [number, number] }).coordinates);
-        if (coords.length) {
-          const lngs = coords.map((c) => c[0]);
-          const lats = coords.map((c) => c[1]);
-          const pad = 0.025;
-          map.fitBounds(
-            [
-              [Math.min(...lngs) - pad, Math.min(...lats) - pad],
-              [Math.max(...lngs) + pad, Math.max(...lats) + pad],
-            ] as mapboxgl.LngLatBoundsLike,
-            { padding: 56, duration: 900, maxZoom: 11 }
-          );
-        }
-      }
+    if (dashboardFitMode) {
+      requestAnimationFrame(() => {
+        map.resize();
+        runDashboardFit();
+      });
+      window.addEventListener("resize", onResize);
     }
 
     return () => {
+      if (resizeT !== undefined) clearTimeout(resizeT);
+      if (zoomBoostT !== undefined) clearTimeout(zoomBoostT);
+      window.removeEventListener("resize", onResize);
       popup?.remove();
       if (scatterListenersAttached) {
         map.off("click", "all-stops-dot", onScatterClick);
@@ -729,7 +852,17 @@ export default function MapView({
       safeRemoveLayer(map, "all-stops-halo");
       safeRemoveSource(map, "all-stops-scatter");
     };
-  }, [allStopsScatter, mapLoaded, mapData, safeRemoveLayer, safeRemoveSource]);
+  }, [
+    allStopsScatter,
+    mapLoaded,
+    mapData,
+    omitGlobalRouteLines,
+    spinGlobe,
+    homeMarkers,
+    currentLocation,
+    safeRemoveLayer,
+    safeRemoveSource,
+  ]);
 
   // Highlight active stop — animate inner circle only, never el
   useEffect(() => {
@@ -753,6 +886,47 @@ export default function MapView({
     });
   }, [activeStopIndex, mapData]);
 
+  // Dashboard / map: approximate Google Maps "blue dot"
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    userLocationMarkerRef.current?.remove();
+    userLocationMarkerRef.current = null;
+    if (!currentLocation) return;
+
+    const el = document.createElement("div");
+    el.style.cssText =
+      "width:24px;height:24px;margin:0;padding:0;display:flex;align-items:center;justify-content:center;pointer-events:auto;";
+    el.setAttribute("aria-label", "Your location");
+    el.title = "Your location";
+
+    const pulse = document.createElement("div");
+    pulse.style.cssText =
+      "position:absolute;width:22px;height:22px;border-radius:50%;background:rgba(66,133,244,0.38);pointer-events:none;";
+    const dot = document.createElement("div");
+    dot.style.cssText =
+      "position:relative;width:12px;height:12px;border-radius:50%;background:#1a73e8;border:2.5px solid #fff;" +
+      "box-shadow:0 0 0 1px rgba(0,0,0,0.18),0 2px 6px rgba(0,0,0,0.35);pointer-events:none;";
+
+    el.appendChild(pulse);
+    el.appendChild(dot);
+
+    const marker = new mapboxgl.Marker({
+      element: el,
+      anchor: "center",
+      pitchAlignment: "map",
+    })
+      .setLngLat([currentLocation.lng, currentLocation.lat])
+      .addTo(map);
+
+    userLocationMarkerRef.current = marker;
+    return () => {
+      marker.remove();
+      userLocationMarkerRef.current = null;
+    };
+  }, [currentLocation, mapLoaded]);
+
   // Saved home addresses from profile (house icon)
   useEffect(() => {
     const map = mapRef.current;
@@ -772,7 +946,18 @@ export default function MapView({
 
     homes.forEach((loc) => {
       const el = document.createElement("div");
-      el.style.cssText = `
+      el.style.cssText = compactHomeMarkers
+        ? `
+        width: 22px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      `
+        : `
         width: 34px;
         height: 34px;
         display: flex;
@@ -784,7 +969,24 @@ export default function MapView({
       `;
 
       const inner = document.createElement("div");
-      inner.style.cssText = `
+      if (compactHomeMarkers) {
+        inner.style.cssText = `
+        width: 11px;
+        height: 14px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 32%, #f87171 0%, #ef4444 45%, #b91c1c 100%);
+        border: 2px solid rgba(255,255,255,0.96);
+        box-shadow:
+          0 0 0 1.5px rgba(15,23,42,0.65),
+          0 2px 6px rgba(0,0,0,0.35),
+          inset 0 1px 0 rgba(255,255,255,0.35);
+        cursor: default;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        box-sizing: border-box;
+        flex-shrink: 0;
+      `;
+      } else {
+        inner.style.cssText = `
         width: 32px;
         height: 32px;
         border-radius: 10px;
@@ -799,7 +1001,8 @@ export default function MapView({
         box-sizing: border-box;
         flex-shrink: 0;
       `;
-      inner.innerHTML = houseSvg;
+        inner.innerHTML = houseSvg;
+      }
 
       const title = esc(loc.label?.trim() || "Home");
       const tipHtml = `
@@ -807,10 +1010,16 @@ export default function MapView({
         <div style="font-size:10px;color:rgba(255,255,255,0.65);line-height:1.35;">${esc(loc.address)}</div>
       `;
 
+      const shadowCompact =
+        "0 0 0 1.5px rgba(15,23,42,0.65), 0 2px 6px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.35)";
+      const shadowCompactHover =
+        "0 0 0 2px rgba(15,23,42,0.75), 0 3px 10px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.42)";
+
       inner.addEventListener("mouseenter", () => {
         inner.style.transform = "scale(1.12)";
-        inner.style.boxShadow =
-          "0 0 0 2px rgba(10,14,26,0.92), 0 3px 12px rgba(0,0,0,0.4), 0 0 20px rgba(245,158,11,0.5)";
+        inner.style.boxShadow = compactHomeMarkers
+          ? shadowCompactHover
+          : "0 0 0 2px rgba(10,14,26,0.92), 0 3px 12px rgba(0,0,0,0.4), 0 0 20px rgba(245,158,11,0.5)";
         const tip = tooltipRef.current;
         const wrapper = wrapperRef.current;
         if (!tip || !wrapper) return;
@@ -824,8 +1033,9 @@ export default function MapView({
 
       inner.addEventListener("mouseleave", () => {
         inner.style.transform = "scale(1)";
-        inner.style.boxShadow =
-          "0 0 0 2px rgba(10,14,26,0.92), 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(245,158,11,0.35)";
+        inner.style.boxShadow = compactHomeMarkers
+          ? shadowCompact
+          : "0 0 0 2px rgba(10,14,26,0.92), 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(245,158,11,0.35)";
         if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
       });
 
@@ -840,7 +1050,7 @@ export default function MapView({
       homeMapboxMarkersRef.current.forEach((m) => m.remove());
       homeMapboxMarkersRef.current = [];
     };
-  }, [homeMarkers, mapLoaded]);
+  }, [homeMarkers, mapLoaded, compactHomeMarkers]);
 
   // Bug 12 & Feature — render clustered photo markers on the map
   useEffect(() => {

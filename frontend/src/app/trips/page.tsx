@@ -28,6 +28,38 @@ export default function TripsDashboard() {
   const [loading, setLoading] = useState(true);
   const [totalMediaCount, setTotalMediaCount] = useState(0);
   const [stopsMap, setStopsMap] = useState<GeoJSONFeatureCollection | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{ lng: number; lat: number } | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCurrentLocation({
+          lng: pos.coords.longitude,
+          lat: pos.coords.latitude,
+        });
+      },
+      () => {
+        /* permission denied — map still shows stops & homes */
+      },
+      { enableHighAccuracy: true, maximumAge: 120_000, timeout: 18_000 }
+    );
+    const refresh = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          setCurrentLocation({
+            lng: pos.coords.longitude,
+            lat: pos.coords.latitude,
+          }),
+        () => {},
+        { enableHighAccuracy: false, maximumAge: 180_000, timeout: 12_000 }
+      );
+    };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -128,11 +160,14 @@ export default function TripsDashboard() {
 
         <div className="relative h-[min(22rem,42vh)] w-full rounded-2xl overflow-hidden border border-[var(--color-border)] mb-8 shadow-xl shadow-black/25 ring-1 ring-white/[0.04]">
           <div className="pointer-events-none absolute bottom-2 left-2 z-[5] rounded-lg bg-black/45 backdrop-blur-sm border border-white/10 px-2 py-1 text-[10px] font-medium text-white/90 tracking-wide">
-            All stops · tap a dot
+            Stops · home (red) · you (blue) — no routes
           </div>
           <DashboardMap
             allStopsScatter={stopsMap}
             homeMarkers={homeLocations}
+            currentLocation={currentLocation}
+            omitGlobalRouteLines
+            compactHomeMarkers
             spinGlobe={false}
             className="h-full min-h-[220px]"
           />
