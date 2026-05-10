@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { getTrips, getAllMedia, getAllStopsMap } from "@/lib/api";
+import { getTrips, getAllStopsMap } from "@/lib/api";
 import type { GeoJSONFeatureCollection, TripSummary } from "@/types";
 import TripCard from "@/components/trips/TripCard";
 import Link from "next/link";
@@ -26,7 +26,6 @@ export default function TripsDashboard() {
   const { homeLocations } = useHomeLocations();
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [totalMediaCount, setTotalMediaCount] = useState(0);
   const [stopsMap, setStopsMap] = useState<GeoJSONFeatureCollection | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ lng: number; lat: number } | null>(
     null
@@ -64,9 +63,8 @@ export default function TripsDashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const [tripsData, allMedia, stopsData] = await Promise.all([
+        const [tripsData, stopsData] = await Promise.all([
           getTrips(),
-          getAllMedia().catch(() => []),
           getAllStopsMap().catch((e) => {
             console.warn("Dashboard: all-stops-map failed", e);
             return null;
@@ -80,7 +78,6 @@ export default function TripsDashboard() {
             return (isNaN(bTime) ? 0 : bTime) - (isNaN(aTime) ? 0 : aTime);
           })
         );
-        setTotalMediaCount(allMedia.length);
       } catch (err) {
         console.error("Failed to load dashboard:", err);
         setStopsMap(null);
@@ -91,19 +88,16 @@ export default function TripsDashboard() {
     load();
   }, []);
 
-  const totalStops = trips.reduce((sum, t) => sum + t.stop_count, 0);
-
   const refreshAfterTripChange = () => {
     setLoading(true);
     Promise.all([
       getTrips(),
-      getAllMedia().catch(() => []),
       getAllStopsMap().catch((e) => {
         console.warn("Dashboard: all-stops-map failed", e);
         return null;
       }),
     ])
-      .then(([t, m, s]) => {
+      .then(([t, s]) => {
         setTrips(
           [...t].sort((a, b) => {
             const aTime = Date.parse(a.start_date ?? a.end_date ?? a.created_at);
@@ -111,7 +105,6 @@ export default function TripsDashboard() {
             return (isNaN(bTime) ? 0 : bTime) - (isNaN(aTime) ? 0 : aTime);
           })
         );
-        setTotalMediaCount(m.length);
         setStopsMap(s);
       })
       .catch(console.error)
@@ -122,12 +115,14 @@ export default function TripsDashboard() {
     <div className="relative isolate min-h-full">
       {/* Decorative spinning globe — main column only on desktop */}
       <div
-        className="pointer-events-none fixed inset-y-0 right-0 z-0 left-0 lg:left-[280px] opacity-[0.26] sm:opacity-[0.30] md:opacity-[0.34]"
+        className="pointer-events-none fixed inset-y-0 right-0 z-0 left-0 lg:left-[280px] opacity-[0.28] sm:opacity-[0.32] md:opacity-[0.38]"
         aria-hidden
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-sky-950/20 via-transparent to-amber-950/18" />
-        <div className="absolute inset-0 -top-[10%] h-[120%] min-h-[480px]">
-          <GlobeBackdrop />
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-950/18 via-transparent to-amber-950/16" />
+        <div className="absolute inset-x-[-18%] -top-[32%] h-[158%] min-h-[620px] sm:min-h-[720px] flex items-center justify-center overflow-visible">
+          <div className="w-[132%] h-[132%] min-h-[660px] sm:min-h-[780px] max-w-none origin-center scale-110 sm:scale-[1.15] md:scale-125">
+            <GlobeBackdrop />
+          </div>
         </div>
       </div>
 
@@ -168,27 +163,6 @@ export default function TripsDashboard() {
             spinGlobe={false}
             className="h-full min-h-[220px]"
           />
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          {[
-            { label: "Trips", value: trips.length, icon: "✈️" },
-            { label: "Stops", value: totalStops, icon: "📍" },
-            { label: "Photos", value: totalMediaCount, icon: "📷" },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="glass rounded-2xl p-5 animate-fade-in transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{stat.icon}</span>
-                <div>
-                  <p className="text-2xl font-bold text-[var(--color-text)] m-0">{stat.value}</p>
-                  <p className="text-xs text-[var(--color-text-secondary)] m-0">{stat.label}</p>
-                </div>
-              </div>
-            </div>
-          ))}
         </div>
 
         <div>

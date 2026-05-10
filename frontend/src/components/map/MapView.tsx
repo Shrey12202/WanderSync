@@ -185,7 +185,7 @@ export default function MapView({
   useEffect(() => {
     if (!canvasRef.current || mapRef.current) return;
 
-    const initialStyle = spinGlobe || showHeatmap ? heatmapStyle : normalStyle;
+    const initialStyle = showHeatmap ? heatmapStyle : normalStyle;
     const initialFlatZoom = getResponsiveFlatZoom();
     const initialGlobeZoom = getResponsiveGlobeZoom();
     const isSmallScreen = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
@@ -248,17 +248,6 @@ export default function MapView({
     map.on("load", () => {
       setMapLoaded(true);
       setCurrentStyle(initialStyle);
-
-      // Add atmosphere on globe mode
-      if (spinGlobe) {
-        map.setFog({
-          color: "rgb(5, 10, 25)",
-          "high-color": "rgb(40, 80, 140)",
-          "horizon-blend": 0.2,
-          "space-color": "rgb(5, 5, 15)",
-          "star-intensity": 0.6,
-        });
-      }
 
       // Hide country labels dynamically so it persists
       const updateLabels = () => {
@@ -353,13 +342,12 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only remount `MapView` or change `mapInteractive` to rebuild the map
   }, [mapInteractive]);
 
-  // Basemap sync: Globe + heatmap use dark-v11; flat non-heatmap uses outdoors-v12 (prevents erroneous flips).
+  // Basemap: colorful outdoors unless heatmap (dark overlay needs dark-v11).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
 
-    const targetStyle =
-      showHeatmap || spinGlobe ? heatmapStyle : normalStyle;
+    const targetStyle = showHeatmap ? heatmapStyle : normalStyle;
     if (currentStyle === targetStyle) return;
 
     setMapLoaded(false);
@@ -369,7 +357,40 @@ export default function MapView({
       setCurrentStyle(targetStyle);
       setMapLoaded(true);
     });
-  }, [showHeatmap, spinGlobe, mapLoaded, currentStyle]);
+  }, [showHeatmap, mapLoaded, currentStyle]);
+
+  // Globe fog / atmosphere — light haze on terrain globe, starfield when heatmap is on.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    if (!spinGlobe) {
+      try {
+        map.setFog({});
+      } catch {
+        /* ignore older GL builds */
+      }
+      return;
+    }
+
+    if (showHeatmap) {
+      map.setFog({
+        color: "rgb(5, 10, 25)",
+        "high-color": "rgb(40, 80, 140)",
+        "horizon-blend": 0.2,
+        "space-color": "rgb(5, 5, 15)",
+        "star-intensity": 0.55,
+      });
+    } else {
+      map.setFog({
+        color: "rgb(186, 210, 232)",
+        "high-color": "rgb(238, 248, 255)",
+        "horizon-blend": 0.065,
+        "space-color": "rgb(218, 232, 248)",
+        "star-intensity": 0.06,
+      });
+    }
+  }, [spinGlobe, showHeatmap, mapLoaded]);
 
   // Render trip stops on map
   useEffect(() => {
@@ -820,12 +841,17 @@ export default function MapView({
     };
 
     if (allStopsScatter && allStopsScatter.features?.length > 0) {
-      const pinSize = 26;
+      const pinSize = omitGlobalRouteLines ? 31 : 26;
       for (const x of allStopsScatter.features) {
         if (x.geometry?.type !== "Point") continue;
         const coords = (x.geometry as { type: "Point"; coordinates: [number, number] }).coordinates;
         const props = (x.properties ?? {}) as Record<string, unknown>;
-        const el = createGoogleMapPinElement({ fill: STOP_SCATTER_PIN, size: pinSize });
+        const el = createGoogleMapPinElement({
+          fill: STOP_SCATTER_PIN,
+          size: pinSize,
+          inner: "dot",
+          emphasis: omitGlobalRouteLines,
+        });
         el.style.cursor = "pointer";
         el.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -960,7 +986,11 @@ export default function MapView({
     const pinSize = compactHomeMarkers ? 24 : 28;
 
     homes.forEach((loc) => {
-      const el = createGoogleMapPinElement({ fill: STOP_SCATTER_PIN, size: pinSize });
+      const el = createGoogleMapPinElement({
+        fill: STOP_SCATTER_PIN,
+        size: pinSize,
+        inner: "home",
+      });
       el.style.cursor = "default";
 
       const title = esc(loc.label?.trim() || "Home");
