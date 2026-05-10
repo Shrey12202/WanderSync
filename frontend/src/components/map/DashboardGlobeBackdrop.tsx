@@ -7,7 +7,7 @@ const MapView = dynamic(() => import("@/components/map/MapView"), {
   loading: () => null,
 });
 
-/** Decorative spinning globe for the trips dashboard — non-interactive, low opacity. */
+/** Decorative globe — uses the same `MapView` + fog as the Map tab’s globe (not a second map “mode”). */
 export default function DashboardGlobeBackdrop() {
   return (
     <div className="h-full w-full min-h-[320px] [&_.mapboxgl-ctrl]:!hidden" aria-hidden>

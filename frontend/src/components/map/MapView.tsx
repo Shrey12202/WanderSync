@@ -359,7 +359,8 @@ export default function MapView({
     });
   }, [showHeatmap, mapLoaded, currentStyle]);
 
-  // Globe fog / atmosphere — light haze on terrain globe, starfield when heatmap is on.
+  // Globe fog / atmosphere — dark space void + stars; terrain style stays colorful (outdoors).
+  // Map tab and dashboard backdrop both use this when `spinGlobe` (shared component, not a separate engine).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
@@ -383,11 +384,11 @@ export default function MapView({
       });
     } else {
       map.setFog({
-        color: "rgb(186, 210, 232)",
-        "high-color": "rgb(238, 248, 255)",
-        "horizon-blend": 0.065,
-        "space-color": "rgb(218, 232, 248)",
-        "star-intensity": 0.06,
+        color: "rgb(22, 32, 58)",
+        "high-color": "rgb(52, 78, 128)",
+        "horizon-blend": 0.14,
+        "space-color": "rgb(6, 8, 22)",
+        "star-intensity": 0.48,
       });
     }
   }, [spinGlobe, showHeatmap, mapLoaded]);
