@@ -3,12 +3,34 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { HomeLocation, MapData, MediaItem } from "@/types";
+import type { GeoJSONFeatureCollection, HomeLocation, MapData, MediaItem } from "@/types";
 import type { RouteResult } from "@/lib/directions";
 import { getThumbnailUrl } from "@/lib/api";
 import StopSlideshowModal from "@/components/media/StopSlideshowModal";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+
+/** Wider field of view on small screens; more zoom on large (flat mercator map tab). */
+function getResponsiveFlatZoom(): number {
+  if (typeof window === "undefined") return 1.48;
+  const w = window.innerWidth;
+  if (w < 480) return 1.05;
+  if (w < 640) return 1.18;
+  if (w < 900) return 1.34;
+  if (w < 1280) return 1.5;
+  if (w < 1920) return 1.66;
+  return 1.82;
+}
+
+/** Slight globe zoom bump on large displays. */
+function getResponsiveGlobeZoom(): number {
+  if (typeof window === "undefined") return 1;
+  const w = window.innerWidth;
+  if (w < 480) return 0.9;
+  if (w < 900) return 0.96;
+  if (w < 1440) return 1.02;
+  return 1.08;
+}
 
 const STOP_MARKER_SHADOW_BASE =
   "0 0 0 2px rgba(10,14,26,0.95), 0 1px 0 rgba(255,255,255,0.35) inset, 0 3px 10px rgba(0,0,0,0.35), 0 0 18px rgba(217,119,6,0.42)";
@@ -35,6 +57,10 @@ interface MapViewProps {
   routeOverride?: RouteResult | null;
   /** Saved profile addresses with coordinates — shown as a house pin */
   homeMarkers?: HomeLocation[];
+  /** All stops as points (e.g. dashboard) — draws circles; omit route lines by not passing globalPaths */
+  allStopsScatter?: GeoJSONFeatureCollection | null;
+  /** When false, map is view-only (no pan/zoom controls; globe keeps auto-spin). */
+  mapInteractive?: boolean;
 }
 
 export default function MapView({
@@ -49,6 +75,8 @@ export default function MapView({
   mediaMarkers = [],
   routeOverride = null,
   homeMarkers = [],
+  allStopsScatter = null,
+  mapInteractive = true,
 }: MapViewProps) {
   // Two separate refs:
   //   wrapperRef → our outer React div (safe to use, position:relative)
@@ -113,21 +141,24 @@ export default function MapView({
     if (!canvasRef.current || mapRef.current) return;
 
     const initialStyle = spinGlobe ? "mapbox://styles/mapbox/dark-v11" : normalStyle;
+    const initialFlatZoom = getResponsiveFlatZoom();
+    const initialGlobeZoom = getResponsiveGlobeZoom();
     const isSmallScreen = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
-    // Flat map was feeling too zoomed-in; keep it a bit wider on all screens.
-    const initialFlatZoom = isSmallScreen ? 1.25 : 1.5;
     const controlPosition: mapboxgl.ControlPosition = isSmallScreen ? "bottom-right" : "top-right";
     const map = new mapboxgl.Map({
       container: canvasRef.current,
       style: initialStyle,
       center: [0, 20],
-      zoom: spinGlobe ? 1 : initialFlatZoom,
+      zoom: spinGlobe ? initialGlobeZoom : initialFlatZoom,
       pitch: 0,
       antialias: true,
       projection: spinGlobe ? { name: "globe" } : { name: "mercator" },
+      interactive: mapInteractive,
     } as any);
 
-    map.addControl(new mapboxgl.NavigationControl(), controlPosition);
+    if (mapInteractive) {
+      map.addControl(new mapboxgl.NavigationControl(), controlPosition);
+    }
 
     class ResetZoomControl {
       _map: mapboxgl.Map | undefined;
@@ -147,7 +178,12 @@ export default function MapView({
         button.style.alignItems = 'center';
         button.style.justifyContent = 'center';
         button.onclick = () => {
-          map.flyTo({ zoom: spinGlobe ? 1 : initialFlatZoom, pitch: 0, bearing: 0, duration: 1500 });
+          map.flyTo({
+            zoom: spinGlobe ? getResponsiveGlobeZoom() : getResponsiveFlatZoom(),
+            pitch: 0,
+            bearing: 0,
+            duration: 1500,
+          });
         };
         this._container.appendChild(button);
         return this._container;
@@ -160,7 +196,9 @@ export default function MapView({
       }
     }
 
-    map.addControl(new ResetZoomControl(), controlPosition);
+    if (mapInteractive) {
+      map.addControl(new ResetZoomControl(), controlPosition);
+    }
 
     map.on("load", () => {
       setMapLoaded(true);
@@ -197,12 +235,12 @@ export default function MapView({
     // ── Auto-spin globe ────────────────────────────────────────────────────
     if (spinGlobe) {
       const SPEED = 0.12;
-      const BASE_ZOOM = 1;
-      const ZOOM_THRESHOLD = 0.3;
+      const baseGlobeZoom = initialGlobeZoom;
+      const ZOOM_THRESHOLD = 0.28;
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
       const isZoomedIn = () =>
-        (mapRef.current?.getZoom() ?? BASE_ZOOM) > BASE_ZOOM + ZOOM_THRESHOLD;
+        (mapRef.current?.getZoom() ?? baseGlobeZoom) > baseGlobeZoom + ZOOM_THRESHOLD;
 
       const spin = () => {
         if (!isInteractingRef.current && !isZoomedIn() && mapRef.current) {
@@ -213,44 +251,46 @@ export default function MapView({
         spinAnimRef.current = requestAnimationFrame(spin);
       };
 
-      // Any interaction on the map stops spin
-      const stopSpin = () => {
-        isInteractingRef.current = true;
-        if (idleTimer) clearTimeout(idleTimer);
-      };
-
-      // After interaction ends, resume spin after 5s of idle
-      const scheduleResume = () => {
-        if (idleTimer) clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => { isInteractingRef.current = false; }, 5000);
-      };
-
-      // Clicking OUTSIDE the map wrapper resumes spin immediately
-      const resumeOnOutsideClick = (e: MouseEvent | TouchEvent) => {
-        const wrapper = wrapperRef.current;
-        if (wrapper && !wrapper.contains(e.target as Node)) {
+      if (mapInteractive) {
+        const stopSpin = () => {
+          isInteractingRef.current = true;
           if (idleTimer) clearTimeout(idleTimer);
-          isInteractingRef.current = false;
-        }
-      };
+        };
 
-      map.on("mousedown", stopSpin);
-      map.on("touchstart", stopSpin);
-      map.on("mouseup", scheduleResume);
-      map.on("touchend", scheduleResume);
-      map.on("dragend", scheduleResume);
+        const scheduleResume = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => { isInteractingRef.current = false; }, 5000);
+        };
 
-      document.addEventListener("mousedown", resumeOnOutsideClick);
-      document.addEventListener("touchstart", resumeOnOutsideClick);
+        const resumeOnOutsideClick = (e: MouseEvent | TouchEvent) => {
+          const wrapper = wrapperRef.current;
+          if (wrapper && !wrapper.contains(e.target as Node)) {
+            if (idleTimer) clearTimeout(idleTimer);
+            isInteractingRef.current = false;
+          }
+        };
+
+        map.on("mousedown", stopSpin);
+        map.on("touchstart", stopSpin);
+        map.on("mouseup", scheduleResume);
+        map.on("touchend", scheduleResume);
+        map.on("dragend", scheduleResume);
+
+        document.addEventListener("mousedown", resumeOnOutsideClick);
+        document.addEventListener("touchstart", resumeOnOutsideClick);
+
+        (map as any).__spinCleanup = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          document.removeEventListener("mousedown", resumeOnOutsideClick);
+          document.removeEventListener("touchstart", resumeOnOutsideClick);
+        };
+      } else {
+        (map as any).__spinCleanup = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+        };
+      }
 
       spinAnimRef.current = requestAnimationFrame(spin);
-
-      // Store cleanup fn on map for teardown
-      (map as any).__spinCleanup = () => {
-        if (idleTimer) clearTimeout(idleTimer);
-        document.removeEventListener("mousedown", resumeOnOutsideClick);
-        document.removeEventListener("touchstart", resumeOnOutsideClick);
-      };
     }
 
     mapRef.current = map;
@@ -264,7 +304,7 @@ export default function MapView({
       setMapLoaded(false);
       setCurrentStyle("");
     };
-  }, [spinGlobe]);
+  }, [spinGlobe, mapInteractive]);
 
   // Switch map style when heatmap toggle changes — preserves markers since they're DOM-based
   useEffect(() => {
@@ -590,6 +630,106 @@ export default function MapView({
       });
     }
   }, [globalPaths, mapLoaded, safeRemoveLayer, safeRemoveSource]);
+
+  // Dashboard: all stops as colored dots (no route lines)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    safeRemoveLayer(map, "all-stops-dot");
+    safeRemoveLayer(map, "all-stops-halo");
+    safeRemoveSource(map, "all-stops-scatter");
+
+    let popup: mapboxgl.Popup | null = null;
+    let scatterListenersAttached = false;
+    const esc = (s: string) =>
+      String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    const onScatterClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (!f || f.geometry.type !== "Point") return;
+      const coords = f.geometry.coordinates as [number, number];
+      const props = f.properties as Record<string, unknown>;
+      popup?.remove();
+      popup = new mapboxgl.Popup({ offset: 14, closeButton: true })
+        .setLngLat(coords)
+        .setHTML(
+          `<div style="font-family:system-ui,sans-serif;max-width:220px;padding:2px;">
+            <div style="font-size:11px;font-weight:700;color:#fbbf24;">${esc(String(props.trip_title ?? "Trip"))}</div>
+            <div style="font-size:11px;color:#e2e8f0;margin-top:4px;">${esc(String(props.name ?? "Stop"))}</div>
+          </div>`
+        )
+        .addTo(map);
+    };
+    const onEnter = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = "";
+    };
+
+    if (allStopsScatter && allStopsScatter.features?.length > 0) {
+      map.addSource("all-stops-scatter", { type: "geojson", data: allStopsScatter });
+      map.addLayer({
+        id: "all-stops-halo",
+        type: "circle",
+        source: "all-stops-scatter",
+        paint: {
+          "circle-radius": 9,
+          "circle-color": "#0a0e1a",
+          "circle-opacity": 0.42,
+          "circle-blur": 0.35,
+        },
+      });
+      map.addLayer({
+        id: "all-stops-dot",
+        type: "circle",
+        source: "all-stops-scatter",
+        paint: {
+          "circle-radius": 5,
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.95,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "rgba(255,255,255,0.88)",
+        },
+      });
+
+      map.on("click", "all-stops-dot", onScatterClick);
+      map.on("mouseenter", "all-stops-dot", onEnter);
+      map.on("mouseleave", "all-stops-dot", onLeave);
+      scatterListenersAttached = true;
+
+      if (!mapData && allStopsScatter.features.length > 0) {
+        const coords = allStopsScatter.features
+          .filter((x) => x.geometry?.type === "Point")
+          .map((x) => (x.geometry as { type: "Point"; coordinates: [number, number] }).coordinates);
+        if (coords.length) {
+          const lngs = coords.map((c) => c[0]);
+          const lats = coords.map((c) => c[1]);
+          const pad = 0.025;
+          map.fitBounds(
+            [
+              [Math.min(...lngs) - pad, Math.min(...lats) - pad],
+              [Math.max(...lngs) + pad, Math.max(...lats) + pad],
+            ] as mapboxgl.LngLatBoundsLike,
+            { padding: 56, duration: 900, maxZoom: 11 }
+          );
+        }
+      }
+    }
+
+    return () => {
+      popup?.remove();
+      if (scatterListenersAttached) {
+        map.off("click", "all-stops-dot", onScatterClick);
+        map.off("mouseenter", "all-stops-dot", onEnter);
+        map.off("mouseleave", "all-stops-dot", onLeave);
+      }
+      safeRemoveLayer(map, "all-stops-dot");
+      safeRemoveLayer(map, "all-stops-halo");
+      safeRemoveSource(map, "all-stops-scatter");
+    };
+  }, [allStopsScatter, mapLoaded, mapData, safeRemoveLayer, safeRemoveSource]);
 
   // Highlight active stop — animate inner circle only, never el
   useEffect(() => {

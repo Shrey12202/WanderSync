@@ -190,6 +190,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
+  /** Add Stop → “Use my current location”: GPS → lat/lng + `place_id` `gps:…` for createStop. */
   const fillStopFromGeolocation = () => {
     if (!navigator.geolocation) {
       setAddError("Your browser does not support geolocation.");

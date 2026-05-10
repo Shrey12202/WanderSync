@@ -16,6 +16,20 @@ from app.utils.auth import get_current_user_id
 
 router = APIRouter(prefix="/api", tags=["map"])
 
+# Shared palette for global paths + dashboard stop markers (brighter, still not neon)
+TRIP_THEME_COLORS = [
+    "#3B82F6",  # blue-500
+    "#F97316",  # orange-500
+    "#14B8A6",  # teal-500
+    "#FB923C",  # orange-400
+    "#A855F7",  # purple-500
+    "#EAB308",  # yellow-500
+    "#6366F1",  # indigo-500
+    "#22C55E",  # green-500
+    "#EC4899",  # pink-500
+    "#38BDF8",  # sky-400
+]
+
 
 @router.get("/map-data/{trip_id}")
 async def get_map_data(
@@ -192,36 +206,62 @@ async def get_global_paths(
             trip_paths[stop.trip_id] = []
         trip_paths[stop.trip_id].append([stop.longitude, stop.latitude])
 
-    # Distinct jewel tones — readable on dark maps, clearly separated, not neon
-    colors = [
-        "#2563EB",  # blue-600
-        "#EA580C",  # orange-600
-        "#0F766E",  # teal-700
-        "#C2410C",  # burnt orange
-        "#7C3AED",  # violet-600
-        "#B45309",  # amber-700
-        "#4F46E5",  # indigo-600
-        "#047857",  # emerald-700
-        "#BE185D",  # rose-700
-        "#0369A1",  # sky-700
-    ]
-
     features = []
     for trip_id, coords in track_paths.items():
-        color_index = trip_id.int % len(colors)
+        color_index = trip_id.int % len(TRIP_THEME_COLORS)
         features.append({
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": coords},
-            "properties": {"trip_id": str(trip_id), "color": colors[color_index], "is_track": True},
+            "properties": {"trip_id": str(trip_id), "color": TRIP_THEME_COLORS[color_index], "is_track": True},
         })
     for trip_id, coords in trip_paths.items():
         if len(coords) >= 2:
-            color_index = trip_id.int % len(colors)
+            color_index = trip_id.int % len(TRIP_THEME_COLORS)
             features.append({
                 "type": "Feature",
                 "geometry": {"type": "LineString", "coordinates": coords},
-                "properties": {"trip_id": str(trip_id), "color": colors[color_index]},
+                "properties": {"trip_id": str(trip_id), "color": TRIP_THEME_COLORS[color_index]},
             })
+
+    return {"type": "FeatureCollection", "features": features}
+
+
+@router.get("/all-stops-map")
+async def get_all_stops_map(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Every stop with coordinates as points — for dashboard map (no route lines)."""
+    from sqlalchemy import or_
+
+    stmt = (
+        select(Stop, Trip.title)
+        .join(Trip, Stop.trip_id == Trip.id)
+        .where(
+            or_(Trip.user_id == user_id, Trip.user_id.is_(None)),
+            Stop.latitude.isnot(None),
+            Stop.longitude.isnot(None),
+        )
+        .order_by(Stop.trip_id, Stop.sequence_order)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    features = []
+    for stop, trip_title in rows:
+        color_index = stop.trip_id.int % len(TRIP_THEME_COLORS)
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [stop.longitude, stop.latitude]},
+            "properties": {
+                "id": str(stop.id),
+                "name": stop.name or "Stop",
+                "trip_id": str(stop.trip_id),
+                "trip_title": trip_title or "Trip",
+                "sequence_order": stop.sequence_order,
+                "color": TRIP_THEME_COLORS[color_index],
+            },
+        })
 
     return {"type": "FeatureCollection", "features": features}
 

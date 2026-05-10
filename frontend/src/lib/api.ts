@@ -272,6 +272,11 @@ export async function getGlobalPaths(): Promise<GeoJSONFeatureCollection> {
   return request<GeoJSONFeatureCollection>("/api/global-paths");
 }
 
+/** All trip stops as points (for dashboard map — no route lines). */
+export async function getAllStopsMap(): Promise<GeoJSONFeatureCollection> {
+  return request<GeoJSONFeatureCollection>("/api/all-stops-map");
+}
+
 // ── Utility ─────────────────────────────────────────────────
 
 export function getMediaUrl(filePath: string): string {
