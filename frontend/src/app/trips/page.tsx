@@ -35,7 +35,10 @@ export default function TripsDashboard() {
         const [tripsData, allMedia, stopsData] = await Promise.all([
           getTrips(),
           getAllMedia().catch(() => []),
-          getAllStopsMap().catch(() => null),
+          getAllStopsMap().catch((e) => {
+            console.warn("Dashboard: all-stops-map failed", e);
+            return null;
+          }),
         ]);
         setStopsMap(stopsData);
         setTrips(
@@ -60,7 +63,14 @@ export default function TripsDashboard() {
 
   const refreshAfterTripChange = () => {
     setLoading(true);
-    Promise.all([getTrips(), getAllMedia().catch(() => []), getAllStopsMap().catch(() => null)])
+    Promise.all([
+      getTrips(),
+      getAllMedia().catch(() => []),
+      getAllStopsMap().catch((e) => {
+        console.warn("Dashboard: all-stops-map failed", e);
+        return null;
+      }),
+    ])
       .then(([t, m, s]) => {
         setTrips(
           [...t].sort((a, b) => {
@@ -80,10 +90,10 @@ export default function TripsDashboard() {
     <div className="relative isolate min-h-full">
       {/* Decorative spinning globe — main column only on desktop */}
       <div
-        className="pointer-events-none fixed inset-y-0 right-0 z-0 left-0 lg:left-[280px] opacity-[0.12] sm:opacity-[0.16] md:opacity-[0.2]"
+        className="pointer-events-none fixed inset-y-0 right-0 z-0 left-0 lg:left-[280px] opacity-[0.26] sm:opacity-[0.30] md:opacity-[0.34]"
         aria-hidden
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-sky-950/40 via-transparent to-amber-950/30" />
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-950/20 via-transparent to-amber-950/18" />
         <div className="absolute inset-0 -top-[10%] h-[120%] min-h-[480px]">
           <GlobeBackdrop />
         </div>
@@ -116,7 +126,10 @@ export default function TripsDashboard() {
           </div>
         </div>
 
-        <div className="h-[min(22rem,42vh)] w-full rounded-2xl overflow-hidden border border-[var(--color-border)] mb-8 shadow-xl shadow-black/25 ring-1 ring-white/[0.04]">
+        <div className="relative h-[min(22rem,42vh)] w-full rounded-2xl overflow-hidden border border-[var(--color-border)] mb-8 shadow-xl shadow-black/25 ring-1 ring-white/[0.04]">
+          <div className="pointer-events-none absolute bottom-2 left-2 z-[5] rounded-lg bg-black/45 backdrop-blur-sm border border-white/10 px-2 py-1 text-[10px] font-medium text-white/90 tracking-wide">
+            All stops · tap a dot
+          </div>
           <DashboardMap
             allStopsScatter={stopsMap}
             homeMarkers={homeLocations}
