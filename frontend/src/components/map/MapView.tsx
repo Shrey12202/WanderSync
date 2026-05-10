@@ -7,6 +7,9 @@ import type { GeoJSONFeatureCollection, HomeLocation, MapData, MediaItem } from 
 import type { RouteResult } from "@/lib/directions";
 import { getThumbnailUrl } from "@/lib/api";
 import StopSlideshowModal from "@/components/media/StopSlideshowModal";
+import { createGoogleMapPinElement } from "@/components/map/mapPins";
+
+const STOP_SCATTER_PIN = "#EA4335";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -93,7 +96,7 @@ interface MapViewProps {
   mapInteractive?: boolean;
   /** Trips dashboard: strip global route lines even if caller passed stale props; frees map for dots only */
   omitGlobalRouteLines?: boolean;
-  /** Smaller oval home pin (dashboard) vs full house badge (map tab). */
+  /** Smaller Google-style home pin vs slightly larger variant (both teardrops). */
   compactHomeMarkers?: boolean;
   /** “You are here” — rendered as Google-style blue accuracy dot when set */
   currentLocation?: { lng: number; lat: number } | null;
@@ -127,6 +130,8 @@ export default function MapView({
   const mapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const mediaMapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);  // Bug 12
   const homeMapboxMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  /** Dashboard stop pins (classic teardrops, single color). */
+  const scatterPinsMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const spinAnimRef = useRef<number | null>(null);
@@ -180,7 +185,7 @@ export default function MapView({
   useEffect(() => {
     if (!canvasRef.current || mapRef.current) return;
 
-    const initialStyle = spinGlobe ? "mapbox://styles/mapbox/dark-v11" : normalStyle;
+    const initialStyle = spinGlobe || showHeatmap ? heatmapStyle : normalStyle;
     const initialFlatZoom = getResponsiveFlatZoom();
     const initialGlobeZoom = getResponsiveGlobeZoom();
     const isSmallScreen = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
@@ -344,24 +349,27 @@ export default function MapView({
       setMapLoaded(false);
       setCurrentStyle("");
     };
-  }, [spinGlobe, mapInteractive]);
+    // Map tab: parent remounts with `key` when Globe ⟷ Flat so projection stays in sync. Init uses first-render props only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only remount `MapView` or change `mapInteractive` to rebuild the map
+  }, [mapInteractive]);
 
-  // Switch map style when heatmap toggle changes — preserves markers since they're DOM-based
+  // Basemap sync: Globe + heatmap use dark-v11; flat non-heatmap uses outdoors-v12 (prevents erroneous flips).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
 
-    const targetStyle = showHeatmap ? heatmapStyle : normalStyle;
+    const targetStyle =
+      showHeatmap || spinGlobe ? heatmapStyle : normalStyle;
     if (currentStyle === targetStyle) return;
 
-    setMapLoaded(false); // pause other effects while style loads
+    setMapLoaded(false);
     map.setStyle(targetStyle);
 
     map.once("style.load", () => {
       setCurrentStyle(targetStyle);
       setMapLoaded(true);
     });
-  }, [showHeatmap, mapLoaded, currentStyle]);
+  }, [showHeatmap, spinGlobe, mapLoaded, currentStyle]);
 
   // Render trip stops on map
   useEffect(() => {
@@ -649,26 +657,48 @@ export default function MapView({
     if (!map || !mapLoaded) return;
     safeRemoveLayer(map, "global-paths-layer");
     safeRemoveLayer(map, "global-paths-outline-layer");
+    safeRemoveLayer(map, "global-paths-glow-layer");
     safeRemoveSource(map, "global-paths-source");
 
     if (omitGlobalRouteLines) return;
 
     if (globalPaths && globalPaths.features?.length > 0) {
       map.addSource("global-paths-source", { type: "geojson", data: globalPaths });
-      // Dark outline for contrast at low zoom
+      map.addLayer({
+        id: "global-paths-glow-layer",
+        type: "line",
+        source: "global-paths-source",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 14,
+          "line-opacity": 0.2,
+          "line-blur": 4.5,
+        },
+      });
       map.addLayer({
         id: "global-paths-outline-layer",
         type: "line",
         source: "global-paths-source",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": "rgba(8,10,18,0.55)", "line-width": 7, "line-opacity": 0.82, "line-blur": 0.5 },
+        paint: {
+          "line-color": "rgba(6,10,28,0.78)",
+          "line-width": 9,
+          "line-opacity": 0.9,
+          "line-blur": 0.35,
+        },
       });
       map.addLayer({
         id: "global-paths-layer",
         type: "line",
         source: "global-paths-source",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": ["get", "color"], "line-width": 4.6, "line-opacity": 0.94 },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 5.4,
+          "line-opacity": 1,
+          "line-blur": 0.15,
+        },
       });
     }
   }, [globalPaths, omitGlobalRouteLines, mapLoaded, safeRemoveLayer, safeRemoveSource]);
@@ -681,6 +711,8 @@ export default function MapView({
     safeRemoveLayer(map, "all-stops-dot");
     safeRemoveLayer(map, "all-stops-halo");
     safeRemoveSource(map, "all-stops-scatter");
+    scatterPinsMarkersRef.current.forEach((m) => m.remove());
+    scatterPinsMarkersRef.current = [];
 
     const dashboardFitMode = omitGlobalRouteLines && !mapData && !spinGlobe;
 
@@ -768,17 +800,15 @@ export default function MapView({
     };
 
     let popup: mapboxgl.Popup | null = null;
-    let scatterListenersAttached = false;
     const esc = (s: string) =>
       String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-    const onScatterClick = (e: mapboxgl.MapLayerMouseEvent) => {
-      const f = e.features?.[0];
-      if (!f || f.geometry.type !== "Point") return;
-      const coords = f.geometry.coordinates as [number, number];
-      const props = f.properties as Record<string, unknown>;
+    const openStopPopup = (
+      coords: [number, number],
+      props: Record<string, unknown>
+    ) => {
       popup?.remove();
-      popup = new mapboxgl.Popup({ offset: 14, closeButton: true })
+      popup = new mapboxgl.Popup({ offset: 18, closeButton: true, anchor: "bottom" })
         .setLngLat(coords)
         .setHTML(
           `<div style="font-family:system-ui,sans-serif;max-width:220px;padding:2px;">
@@ -788,46 +818,34 @@ export default function MapView({
         )
         .addTo(map);
     };
-    const onEnter = () => {
-      map.getCanvas().style.cursor = "pointer";
-    };
-    const onLeave = () => {
-      map.getCanvas().style.cursor = "";
-    };
 
     if (allStopsScatter && allStopsScatter.features?.length > 0) {
-      map.addSource("all-stops-scatter", {
-        type: "geojson",
-        data: allStopsScatter as unknown as GeoJSON.FeatureCollection,
-      });
-      map.addLayer({
-        id: "all-stops-halo",
-        type: "circle",
-        source: "all-stops-scatter",
-        paint: {
-          "circle-radius": 9,
-          "circle-color": "#0a0e1a",
-          "circle-opacity": 0.42,
-          "circle-blur": 0.35,
-        },
-      });
-      map.addLayer({
-        id: "all-stops-dot",
-        type: "circle",
-        source: "all-stops-scatter",
-        paint: {
-          "circle-radius": 5,
-          "circle-color": ["get", "color"],
-          "circle-opacity": 0.95,
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "rgba(255,255,255,0.88)",
-        },
-      });
-
-      map.on("click", "all-stops-dot", onScatterClick);
-      map.on("mouseenter", "all-stops-dot", onEnter);
-      map.on("mouseleave", "all-stops-dot", onLeave);
-      scatterListenersAttached = true;
+      const pinSize = 26;
+      for (const x of allStopsScatter.features) {
+        if (x.geometry?.type !== "Point") continue;
+        const coords = (x.geometry as { type: "Point"; coordinates: [number, number] }).coordinates;
+        const props = (x.properties ?? {}) as Record<string, unknown>;
+        const el = createGoogleMapPinElement({ fill: STOP_SCATTER_PIN, size: pinSize });
+        el.style.cursor = "pointer";
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openStopPopup(coords, props);
+        });
+        el.addEventListener("mouseenter", () => {
+          el.style.transform = "scale(1.08) translateY(-1px)";
+        });
+        el.addEventListener("mouseleave", () => {
+          el.style.transform = "none";
+        });
+        const marker = new mapboxgl.Marker({
+          element: el,
+          anchor: "bottom",
+          pitchAlignment: "map",
+        })
+          .setLngLat(coords)
+          .addTo(map);
+        scatterPinsMarkersRef.current.push(marker);
+      }
     }
 
     if (dashboardFitMode) {
@@ -843,11 +861,8 @@ export default function MapView({
       if (zoomBoostT !== undefined) clearTimeout(zoomBoostT);
       window.removeEventListener("resize", onResize);
       popup?.remove();
-      if (scatterListenersAttached) {
-        map.off("click", "all-stops-dot", onScatterClick);
-        map.off("mouseenter", "all-stops-dot", onEnter);
-        map.off("mouseleave", "all-stops-dot", onLeave);
-      }
+      scatterPinsMarkersRef.current.forEach((m) => m.remove());
+      scatterPinsMarkersRef.current = [];
       safeRemoveLayer(map, "all-stops-dot");
       safeRemoveLayer(map, "all-stops-halo");
       safeRemoveSource(map, "all-stops-scatter");
@@ -927,7 +942,7 @@ export default function MapView({
     };
   }, [currentLocation, mapLoaded]);
 
-  // Saved home addresses from profile (house icon)
+  // Saved home addresses — Google-style teardrop (same silhouette as scatter stops).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
@@ -939,70 +954,14 @@ export default function MapView({
       (h) => h.latitude != null && h.longitude != null
     ) as (HomeLocation & { latitude: number; longitude: number })[];
 
-    const houseSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="17" height="17" fill="#0c1224" aria-hidden="true"><path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-9.19-9.2a1.5 1.5 0 00-2.12 0l-9.2 9.19a.75.75 0 101.06 1.06l8.69-8.69z"/><path d="M12 5.43l-6.75 6.75V20.25a.75.75 0 00.75.75H10.5v-4.5a.75.75 0 01.75-.75h1.5a.75.75 0 01.75.75v4.5H18a.75.75 0 00.75-.75v-8.07L12 5.43z"/></svg>`;
-
     const esc = (s: string) =>
       s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-    homes.forEach((loc) => {
-      const el = document.createElement("div");
-      el.style.cssText = compactHomeMarkers
-        ? `
-        width: 22px;
-        height: 22px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      `
-        : `
-        width: 34px;
-        height: 34px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      `;
+    const pinSize = compactHomeMarkers ? 24 : 28;
 
-      const inner = document.createElement("div");
-      if (compactHomeMarkers) {
-        inner.style.cssText = `
-        width: 11px;
-        height: 14px;
-        border-radius: 50%;
-        background: radial-gradient(circle at 38% 32%, #f87171 0%, #ef4444 45%, #b91c1c 100%);
-        border: 2px solid rgba(255,255,255,0.96);
-        box-shadow:
-          0 0 0 1.5px rgba(15,23,42,0.65),
-          0 2px 6px rgba(0,0,0,0.35),
-          inset 0 1px 0 rgba(255,255,255,0.35);
-        cursor: default;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-        box-sizing: border-box;
-        flex-shrink: 0;
-      `;
-      } else {
-        inner.style.cssText = `
-        width: 32px;
-        height: 32px;
-        border-radius: 10px;
-        background: linear-gradient(145deg, #fef3c7 0%, #fcd34d 45%, #14b8a6 100%);
-        border: 2px solid rgba(255, 250, 240, 0.95);
-        box-shadow: 0 0 0 2px rgba(10,14,26,0.92), 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(245,158,11,0.35);
-        cursor: default;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-        box-sizing: border-box;
-        flex-shrink: 0;
-      `;
-        inner.innerHTML = houseSvg;
-      }
+    homes.forEach((loc) => {
+      const el = createGoogleMapPinElement({ fill: STOP_SCATTER_PIN, size: pinSize });
+      el.style.cursor = "default";
 
       const title = esc(loc.label?.trim() || "Home");
       const tipHtml = `
@@ -1010,37 +969,25 @@ export default function MapView({
         <div style="font-size:10px;color:rgba(255,255,255,0.65);line-height:1.35;">${esc(loc.address)}</div>
       `;
 
-      const shadowCompact =
-        "0 0 0 1.5px rgba(15,23,42,0.65), 0 2px 6px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.35)";
-      const shadowCompactHover =
-        "0 0 0 2px rgba(15,23,42,0.75), 0 3px 10px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.42)";
-
-      inner.addEventListener("mouseenter", () => {
-        inner.style.transform = "scale(1.12)";
-        inner.style.boxShadow = compactHomeMarkers
-          ? shadowCompactHover
-          : "0 0 0 2px rgba(10,14,26,0.92), 0 3px 12px rgba(0,0,0,0.4), 0 0 20px rgba(245,158,11,0.5)";
+      el.addEventListener("mouseenter", () => {
+        el.style.transform = "scale(1.08) translateY(-1px)";
         const tip = tooltipRef.current;
         const wrapper = wrapperRef.current;
         if (!tip || !wrapper) return;
-        const innerRect = inner.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
         const wRect = wrapper.getBoundingClientRect();
         tip.innerHTML = tipHtml;
         tip.style.opacity = "1";
-        tip.style.left = `${innerRect.left - wRect.left + innerRect.width / 2}px`;
-        tip.style.top = `${innerRect.top - wRect.top}px`;
+        tip.style.left = `${r.left - wRect.left + r.width / 2}px`;
+        tip.style.top = `${r.top - wRect.top}px`;
       });
 
-      inner.addEventListener("mouseleave", () => {
-        inner.style.transform = "scale(1)";
-        inner.style.boxShadow = compactHomeMarkers
-          ? shadowCompact
-          : "0 0 0 2px rgba(10,14,26,0.92), 0 2px 8px rgba(0,0,0,0.35), 0 0 14px rgba(245,158,11,0.35)";
+      el.addEventListener("mouseleave", () => {
+        el.style.transform = "none";
         if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
       });
 
-      el.appendChild(inner);
-      const marker = new mapboxgl.Marker({ element: el, anchor: "center", pitchAlignment: "map" })
+      const marker = new mapboxgl.Marker({ element: el, anchor: "bottom", pitchAlignment: "map" })
         .setLngLat([loc.longitude, loc.latitude])
         .addTo(map);
       homeMapboxMarkersRef.current.push(marker);

@@ -95,11 +95,13 @@ export default function HomeMap() {
       {/* Main Map Rendering */}
       <div className="w-full h-full">
         <MapView
+          key={isGlobeView ? "globe" : "flat"}
           heatmapData={heatmapData}
           showHeatmap={showHeatmap}
           globalPaths={globalPaths}
           spinGlobe={isGlobeView}
           homeMarkers={homeLocations}
+          compactHomeMarkers
         />
       </div>
     </div>

@@ -159,9 +159,6 @@ export default function TripsDashboard() {
         </div>
 
         <div className="relative h-[min(22rem,42vh)] w-full rounded-2xl overflow-hidden border border-[var(--color-border)] mb-8 shadow-xl shadow-black/25 ring-1 ring-white/[0.04]">
-          <div className="pointer-events-none absolute bottom-2 left-2 z-[5] rounded-lg bg-black/45 backdrop-blur-sm border border-white/10 px-2 py-1 text-[10px] font-medium text-white/90 tracking-wide">
-            Stops · home (red) · you (blue) — no routes
-          </div>
           <DashboardMap
             allStopsScatter={stopsMap}
             homeMarkers={homeLocations}

@@ -16,18 +16,18 @@ from app.utils.auth import get_current_user_id
 
 router = APIRouter(prefix="/api", tags=["map"])
 
-# Shared palette for global paths + dashboard stop markers (brighter, still not neon)
+# High-contrast palette for globe / global paths (jewel tones — reads well on dark basemap)
 TRIP_THEME_COLORS = [
-    "#3B82F6",  # blue-500
-    "#F97316",  # orange-500
-    "#14B8A6",  # teal-500
-    "#FB923C",  # orange-400
-    "#A855F7",  # purple-500
-    "#EAB308",  # yellow-500
-    "#6366F1",  # indigo-500
-    "#22C55E",  # green-500
-    "#EC4899",  # pink-500
-    "#38BDF8",  # sky-400
+    "#FF3D92",  # magenta
+    "#00E8C6",  # aqua
+    "#FFB020",  # gold
+    "#9D59FF",  # violet
+    "#3DEBFF",  # electric cyan
+    "#FFB84D",  # tangerine
+    "#62FF73",  # lime
+    "#FF5CF0",  # fuchsia
+    "#6EE7FF",  # ice blue
+    "#FFD54A",  # lemon
 ]
 
 
